@@ -1208,9 +1208,15 @@ async def generate_diagnostic_report(
         )
 
     advisory = build_advisory(diagnosis, baseline_diagnosis, lang=lang)
+    advisory_zh = None
+    if lang != "zh-CN":
+        advisory_zh = build_advisory(diagnosis, baseline_diagnosis, lang="zh-CN")
     figure = _envelope_figure(signal_data, info.sampling_rate, diagnosis)
 
-    saved = save_integrated_diagnostic_report(advisory, figure, formats=requested, lang=lang)
+    saved = save_integrated_diagnostic_report(
+        advisory, figure, formats=requested, lang=lang,
+        advisory_zh=advisory_zh,
+    )
     files = saved["files"]
 
     for entry in files:

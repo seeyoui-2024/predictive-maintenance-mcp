@@ -97,14 +97,20 @@ def _build_iso_block(iso: dict, lang: str = "en") -> dict:
 
     zone = iso["zone"]
     rms = iso["rms_velocity_mm_s"]
-    severity = iso.get("severity_level", "")
-    description = iso.get("zone_description", "")
+    raw_severity = iso.get("severity_level", "")
+    raw_description = iso.get("zone_description", "")
+    raw_support = iso.get("support_type", "")
     boundaries = iso.get("boundaries", {})
+
+    zone_upper = zone.upper()
+    severity = t(f"iso.zone.{zone_upper}.severity", lang) or raw_severity
+    description = t(f"iso.zone.{zone_upper}.description", lang) or raw_description
+    support_type = t(f"iso.support.{raw_support}", lang) if raw_support else ""
 
     statement = t("diag.iso.assessed", lang,
         rms=rms, zone=zone, severity=severity,
         machine_group=iso.get('machine_group', ''),
-        support_type=iso.get('support_type', ''),
+        support_type=support_type,
         description=description
     ).strip()
 

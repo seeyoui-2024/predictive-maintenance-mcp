@@ -167,6 +167,17 @@ _TRANSLATIONS = {
         "status.assessed": "Assessed",
         "status.unknown": "Unknown",
 
+        "iso.zone.A.description": "New machine condition. Vibration is excellent.",
+        "iso.zone.A.severity": "Good",
+        "iso.zone.B.description": "Acceptable for unrestricted long-term operation.",
+        "iso.zone.B.severity": "Acceptable",
+        "iso.zone.C.description": "Unsatisfactory for long-term operation. Plan maintenance soon.",
+        "iso.zone.C.severity": "Unsatisfactory",
+        "iso.zone.D.description": "Vibration severity may cause damage. Immediate action required!",
+        "iso.zone.D.severity": "Unacceptable",
+        "iso.support.rigid": "rigid",
+        "iso.support.flexible": "flexible",
+
         "diag.iso.refused": "ISO severity was not assessed. {reason}",
         "diag.iso.assessed": (
             "ISO 20816-3: RMS velocity {rms:.2f} mm/s places this machine in "
@@ -588,6 +599,17 @@ _TRANSLATIONS = {
         "status.refused": "已拒绝",
         "status.assessed": "已评估",
         "status.unknown": "未知",
+
+        "iso.zone.A.description": "新机器状态，振动极为优良。",
+        "iso.zone.A.severity": "良好",
+        "iso.zone.B.description": "可接受，适合长期无限制运行。",
+        "iso.zone.B.severity": "可接受",
+        "iso.zone.C.description": "不适合长期运行，应尽快安排维护。",
+        "iso.zone.C.severity": "不满意",
+        "iso.zone.D.description": "振动严重度可能导致损坏，需立即采取措施！",
+        "iso.zone.D.severity": "不可接受",
+        "iso.support.rigid": "刚性",
+        "iso.support.flexible": "柔性",
 
         "diag.iso.refused": "ISO 严重度未进行评估。{reason}",
         "diag.iso.assessed": (

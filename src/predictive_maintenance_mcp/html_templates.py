@@ -5,9 +5,35 @@ This module contains modern, responsive HTML templates for data visualization.
 All templates are self-contained with inline CSS and use Plotly.js CDN for interactivity.
 """
 
+import json
 from typing import Dict, List, Any, Optional
 
 from .i18n import t
+from .i18n.translations import _TRANSLATIONS
+
+
+def _build_i18n_js(dynamic: Optional[Dict[str, Dict[str, str]]] = None) -> str:
+    """Build the window._i18n JavaScript dictionary for client-side language switching.
+
+    Args:
+        dynamic: Optional dict of {key: {lang: value}} for dynamic content that
+                 needs client-side translation support (e.g. diagnostic statements
+                 generated at render time rather than from the static translation table).
+    """
+    i18n_dict = {}
+    for lang_code in ["en", "zh-CN"]:
+        for key, value in _TRANSLATIONS.get(lang_code, {}).items():
+            if key not in i18n_dict:
+                i18n_dict[key] = {}
+            i18n_dict[key][lang_code] = value
+    if dynamic:
+        for key, trans in dynamic.items():
+            if key not in i18n_dict:
+                i18n_dict[key] = {}
+            for lang_code, value in trans.items():
+                i18n_dict[key][lang_code] = value
+    json_str = json.dumps(i18n_dict, ensure_ascii=False)
+    return f"window._i18n = {json_str};"
 
 
 def get_base_template(
@@ -16,6 +42,7 @@ def get_base_template(
     metadata: Optional[Dict[str, Any]] = None,
     include_plotly: bool = True,
     lang: str = "en",
+    dynamic_i18n: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> str:
     """
     Base HTML template with professional styling.
@@ -29,6 +56,8 @@ def get_base_template(
             network access pass ``False`` and draw with inline SVG instead —
             a document that fetches a script is not self-contained.
         lang: Language code ('en' or 'zh-CN') for the report UI.
+        dynamic_i18n: Optional dict of {key: {lang: value}} for dynamic
+            translations that are not in the static translation table.
 
     Returns:
         Complete HTML document
@@ -284,12 +313,21 @@ def get_base_template(
         </p>
     </div>
 <script>
+    {_build_i18n_js(dynamic=dynamic_i18n)}
     function switchLang(lang) {{
         localStorage.setItem('pdm_lang', lang);
         document.documentElement.lang = lang;
         document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-        document.getElementById('btn-' + (lang === 'zh-CN' ? 'zh' : 'en')).classList.add('active');
-        document.dispatchEvent(new CustomEvent('languagechange', {{detail: {{lang: lang}}}}));
+        var btnId = lang === 'zh-CN' ? 'zh' : 'en';
+        var btn = document.getElementById('btn-' + btnId);
+        if (btn) btn.classList.add('active');
+        // Translate all elements with data-i18n
+        document.querySelectorAll('[data-i18n]').forEach(function(el) {{
+            var key = el.getAttribute('data-i18n');
+            if (window._i18n && window._i18n[key] && window._i18n[key][lang]) {{
+                el.textContent = window._i18n[key][lang];
+            }}
+        }});
     }}
 
     (function() {{
@@ -300,6 +338,13 @@ def get_base_template(
             var btnId = saved === 'zh-CN' ? 'btn-zh' : 'btn-en';
             var btn = document.getElementById(btnId);
             if (btn) btn.classList.add('active');
+            // Apply translations for saved language
+            document.querySelectorAll('[data-i18n]').forEach(function(el) {{
+                var key = el.getAttribute('data-i18n');
+                if (window._i18n && window._i18n[key] && window._i18n[key][saved]) {{
+                    el.textContent = window._i18n[key][saved];
+                }}
+            }});
         }}
     }})();
     </script>
@@ -335,27 +380,27 @@ def create_fft_report(
     info_cards = f"""
     <div class="info-grid">
         <div class="info-item">
-            <div class="info-label">{t("ui.sampling_rate", lang)}</div>
+            <div class="info-label" data-i18n="ui.sampling_rate">{t("ui.sampling_rate", lang)}</div>
             <div class="info-value">{sampling_rate:.0f} Hz</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.frequency_range", lang)}</div>
+            <div class="info-label" data-i18n="ui.frequency_range">{t("ui.frequency_range", lang)}</div>
             <div class="info-value">0 - {max(frequencies):.0f} Hz</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.signal_length", lang)}</div>
+            <div class="info-label" data-i18n="ui.signal_length">{t("ui.signal_length", lang)}</div>
             <div class="info-value">{metadata.get('num_samples', 'N/A'):,}</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.duration", lang)}</div>
+            <div class="info-label" data-i18n="ui.duration">{t("ui.duration", lang)}</div>
             <div class="info-value">{metadata.get('duration', 0):.2f} s</div>
         </div>
     </div>
     """
 
     # Peaks table
-    peaks_html = f"<div class='card'><h3 class='card-title'>🎯 {t('ui.detected_peaks', lang)}</h3><table style='width:100%; border-collapse: collapse;'>"
-    peaks_html += f"<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;'>{t('ui.rank', lang)}</th><th style='padding: 0.75rem; text-align: left;'>{t('ui.frequency_hz', lang)}</th><th style='padding: 0.75rem; text-align: left;'>{t('ui.magnitude_db', lang)}</th><th style='padding: 0.75rem; text-align: left;'>{t('ui.note', lang)}</th></tr>"
+    peaks_html = f"<div class='card'><h3 class='card-title' data-i18n='ui.detected_peaks'>🎯 {t('ui.detected_peaks', lang)}</h3><table style='width:100%; border-collapse: collapse;'>"
+    peaks_html += f"<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.rank'>{t('ui.rank', lang)}</th><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.frequency_hz'>{t('ui.frequency_hz', lang)}</th><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.magnitude_db'>{t('ui.magnitude_db', lang)}</th><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.note'>{t('ui.note', lang)}</th></tr>"
 
     for i, peak in enumerate(peaks[:10], 1):
         freq = peak["frequency"]
@@ -466,7 +511,7 @@ def create_fft_report(
     content = f"""
     <div class="header">
         <div class="header-content">
-            <h1>📊 {t("report.title.fft", lang)}</h1>
+            <h1 data-i18n="report.title.fft">📊 {t("report.title.fft", lang)}</h1>
             <p class="subtitle">{signal_file}</p>
         </div>
     </div>
@@ -521,19 +566,19 @@ def create_envelope_report(
     info_cards = f"""
     <div class="info-grid">
         <div class="info-item">
-            <div class="info-label">{t("ui.filter_range", lang)}</div>
+            <div class="info-label" data-i18n="ui.filter_range">{t("ui.filter_range", lang)}</div>
             <div class="info-value">{filter_band[0]:.0f}-{filter_band[1]:.0f} Hz</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.sampling_rate", lang)}</div>
+            <div class="info-label" data-i18n="ui.sampling_rate">{t("ui.sampling_rate", lang)}</div>
             <div class="info-value">{sampling_rate:.0f} Hz</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.signal_length", lang)}</div>
+            <div class="info-label" data-i18n="ui.signal_length">{t("ui.signal_length", lang)}</div>
             <div class="info-value">{metadata.get('num_samples', 'N/A'):,}</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.duration", lang)}</div>
+            <div class="info-label" data-i18n="ui.duration">{t("ui.duration", lang)}</div>
             <div class="info-value">{metadata.get('duration', 0):.2f} s</div>
         </div>
     </div>
@@ -542,7 +587,7 @@ def create_envelope_report(
     # Bearing frequencies reference (if provided)
     bearing_ref = ""
     if bearing_freqs:
-        bearing_ref = f"<div class='card'><h3 class='card-title'>📌 {t('ui.bearing_char_freq', lang)}</h3><div class='info-grid'>"
+        bearing_ref = f"<div class='card'><h3 class='card-title' data-i18n='ui.bearing_char_freq'>📌 {t('ui.bearing_char_freq', lang)}</h3><div class='info-grid'>"
         colors = {
             "BPFO": "#e74c3c",
             "BPFI": "#f39c12",
@@ -561,8 +606,8 @@ def create_envelope_report(
         bearing_ref += "</div></div>"
 
     # Peaks table
-    peaks_html = f"<div class='card'><h3 class='card-title'>🎯 {t('ui.envelope_spectrum_peaks', lang)}</h3><table style='width:100%; border-collapse: collapse;'>"
-    peaks_html += f"<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;'>{t('ui.rank', lang)}</th><th style='padding: 0.75rem; text-align: left;'>{t('ui.frequency_hz', lang)}</th><th style='padding: 0.75rem; text-align: left;'>{t('ui.magnitude_db', lang)}</th><th style='padding: 0.75rem; text-align: left;'>{t('ui.match', lang)}</th></tr>"
+    peaks_html = f"<div class='card'><h3 class='card-title' data-i18n='ui.envelope_spectrum_peaks'>🎯 {t('ui.envelope_spectrum_peaks', lang)}</h3><table style='width:100%; border-collapse: collapse;'>"
+    peaks_html += f"<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.rank'>{t('ui.rank', lang)}</th><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.frequency_hz'>{t('ui.frequency_hz', lang)}</th><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.magnitude_db'>{t('ui.magnitude_db', lang)}</th><th style='padding: 0.75rem; text-align: left;' data-i18n='ui.match'>{t('ui.match', lang)}</th></tr>"
 
     for i, peak in enumerate(peaks[:10], 1):
         freq = peak["frequency"]
@@ -729,7 +774,7 @@ def create_envelope_report(
     content = f"""
     <div class="header">
         <div class="header-content">
-            <h1>📈 {t("report.title.envelope", lang)}</h1>
+            <h1 data-i18n="report.title.envelope">📈 {t("report.title.envelope", lang)}</h1>
             <p class="subtitle">{signal_file}</p>
         </div>
     </div>
@@ -789,19 +834,19 @@ def create_iso_report(
     info_cards = f"""
     <div class="info-grid">
         <div class="info-item">
-            <div class="info-label">{t("ui.rms_velocity", lang)}</div>
+            <div class="info-label" data-i18n="ui.rms_velocity">{t("ui.rms_velocity", lang)}</div>
             <div class="info-value">{rms_velocity:.2f} mm/s</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.evaluation_zone", lang)}</div>
+            <div class="info-label" data-i18n="ui.evaluation_zone">{t("ui.evaluation_zone", lang)}</div>
             <div class="info-value" style="color: {color};">Zone {zone}</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.machine_group", lang)}</div>
+            <div class="info-label" data-i18n="ui.machine_group">{t("ui.machine_group", lang)}</div>
             <div class="info-value">{iso_result['machine_group']}</div>
         </div>
         <div class="info-item">
-            <div class="info-label">{t("ui.support_type", lang)}</div>
+            <div class="info-label" data-i18n="ui.support_type">{t("ui.support_type", lang)}</div>
             <div class="info-value">{iso_result['support_type'].title()}</div>
         </div>
     </div>
@@ -810,18 +855,18 @@ def create_iso_report(
     # Zone boundaries
     boundaries_card = f"""
     <div class="card">
-        <h3 class="card-title">📏 {t("ui.zone_boundaries", lang)}</h3>
+        <h3 class="card-title" data-i18n="ui.zone_boundaries">📏 {t("ui.zone_boundaries", lang)}</h3>
         <div class="info-grid">
             <div class="info-item" style="border-left-color: #27ae60;">
-                <div class="info-label">{t("ui.zone_ab", lang)}</div>
+                <div class="info-label" data-i18n="ui.zone_ab">{t("ui.zone_ab", lang)}</div>
                 <div class="info-value">{iso_result['boundary_ab']:.1f} mm/s</div>
             </div>
             <div class="info-item" style="border-left-color: #f39c12;">
-                <div class="info-label">{t("ui.zone_bc", lang)}</div>
+                <div class="info-label" data-i18n="ui.zone_bc">{t("ui.zone_bc", lang)}</div>
                 <div class="info-value">{iso_result['boundary_bc']:.1f} mm/s</div>
             </div>
             <div class="info-item" style="border-left-color: #e67e22;">
-                <div class="info-label">{t("ui.zone_cd", lang)}</div>
+                <div class="info-label" data-i18n="ui.zone_cd">{t("ui.zone_cd", lang)}</div>
                 <div class="info-value">{iso_result['boundary_cd']:.1f} mm/s</div>
             </div>
         </div>
@@ -831,7 +876,7 @@ def create_iso_report(
     # Interpretation
     interpretation_card = f"""
     <div class="card">
-        <h3 class="card-title">💡 {t("ui.interpretation", lang)}</h3>
+        <h3 class="card-title" data-i18n="ui.interpretation">💡 {t("ui.interpretation", lang)}</h3>
         <p style="font-size: 1.1rem; line-height: 1.8; color: var(--text-primary);">
             {iso_result['zone_description']}
         </p>

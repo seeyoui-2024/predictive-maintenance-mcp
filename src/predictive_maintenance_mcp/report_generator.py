@@ -365,6 +365,9 @@ def save_integrated_diagnostic_report(
     figure: Optional[Dict[str, Any]] = None,
     formats: Sequence[str] = ("html",),
     lang: str = "en",
+    advisory_zh: Optional[Dict[str, Any]] = None,
+    figure_zh: Optional[Dict[str, Any]] = None,
+    generated_at_zh: str = "",
 ) -> Dict[str, Any]:
     """
     Save the integrated diagnostic report in one or more renderings.
@@ -383,6 +386,9 @@ def save_integrated_diagnostic_report(
         figure: Optional figure description from
             ``figures.build_annotated_envelope_figure``.
         formats: Renderings to write — any of 'html', 'pdf'.
+        advisory_zh: Optional Chinese version of advisory for bilingual reports.
+        figure_zh: Optional Chinese version of figure for bilingual reports.
+        generated_at_zh: Optional Chinese timestamp for bilingual reports.
 
     Returns:
         Dictionary with ``files`` (one entry per rendering), the authored
@@ -412,7 +418,9 @@ def save_integrated_diagnostic_report(
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     html = create_integrated_diagnostic_report(
-        advisory, figure, generated_at=generated_at, lang=lang
+        advisory, figure, generated_at=generated_at, lang=lang,
+        advisory_zh=advisory_zh, figure_zh=figure_zh,
+        generated_at_zh=generated_at_zh or generated_at,
     )
     label = str(advisory.get("signal_id", "signal"))
 

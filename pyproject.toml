@@ -1,0 +1,201 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "predictive-maintenance-mcp"
+version = "0.12.0"
+description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 37 MCP endpoints for vibration analysis, bearing fault detection, ISO 20816 severity assessment, ML anomaly detection, and remaining useful life estimation via natural language"
+readme = "README.md"
+authors = [
+    { name = "Luigi Di Maggio", email = "luigi.dimaggio@polito.it" }
+]
+license = { text = "MIT" }
+keywords = [
+    "predictive-maintenance-ai-agent",
+    "condition-monitoring-ai-agent",
+    "machine-maintenance-copilot",
+    "predictive-maintenance",
+    "condition-monitoring",
+    "vibration-analysis",
+    "bearing-fault-detection",
+    "bearing-fault-diagnosis",
+    "fault-diagnosis",
+    "model-context-protocol",
+    "mcp-server",
+    "claude-ai",
+    "claude-agents",
+    "claude-skills",
+    "claude-code-plugin",
+    "signal-processing",
+    "anomaly-detection",
+    "envelope-analysis",
+    "iso20816",
+    "industry-4-0",
+    "industrial-iot",
+    "machine-learning-condition-monitoring",
+    "remaining-useful-life",
+    "ai-vibration-diagnostics",
+    "machine-health-monitoring"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=2.0.0,<3.0.0",
+    "numpy>=2.3.3",
+    "pandas>=2.3.3",
+    "plotly>=5.24.0",
+    "pydantic>=2.12.0",
+    "pypdf>=4.0",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.16.2",
+]
+
+[project.urls]
+Homepage = "https://lgdimaggio.github.io/predictive-maintenance-mcp/"
+Repository = "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
+Documentation = "https://lgdimaggio.github.io/predictive-maintenance-mcp/"
+Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
+Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
+Changelog = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+predictive-maintenance-mcp = "predictive_maintenance_mcp.server:main"
+
+[tool.setuptools]
+packages = [
+    "predictive_maintenance_mcp",
+    "predictive_maintenance_mcp.signal_acquisition",
+    "predictive_maintenance_mcp.signal_processing",
+    "predictive_maintenance_mcp.diagnostics",
+    "predictive_maintenance_mcp.decision_support",
+    "predictive_maintenance_mcp.prognostics",
+    "predictive_maintenance_mcp.mcp_tools",
+]
+
+[tool.setuptools.package-dir]
+predictive_maintenance_mcp = "src"
+"predictive_maintenance_mcp.signal_acquisition" = "src/signal_acquisition"
+"predictive_maintenance_mcp.signal_processing" = "src/signal_processing"
+"predictive_maintenance_mcp.diagnostics" = "src/diagnostics"
+"predictive_maintenance_mcp.decision_support" = "src/decision_support"
+"predictive_maintenance_mcp.mcp_tools" = "src/mcp_tools"
+"predictive_maintenance_mcp.prognostics" = "src/prognostics"
+
+[project.optional-dependencies]
+docs = [
+    "pypdf>=4.0",
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "sphinx-autodoc-typehints>=2.0",
+]
+ml = [
+    "scikit-learn>=1.4",
+]
+viz = [
+    "plotly>=5.20",
+]
+vector-search = [
+    "faiss-cpu>=1.7",
+    "sentence-transformers>=2.0",
+]
+ocr = [
+    "pytesseract>=0.3",
+    "Pillow>=10.0",
+    "pdf2image>=1.16",
+]
+docx = [
+    "python-docx>=1.0",
+]
+pdf = [
+    "weasyprint>=60.0",
+]
+sse = [
+    "uvicorn>=0.30",
+]
+full = [
+    "predictive-maintenance-mcp[docs,ml,viz,vector-search,ocr,docx,pdf,sse]",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "flake8>=7.0.0",
+    "mypy>=2.3,<2.4",
+    "types-requests>=2.31.0",
+    "pyyaml>=6.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311", "py312"]
+include = '\\.pyi?$'
+exclude = '''
+/(\
+    \\.git\
+  | \\.mypy_cache\
+  | \\.pytest_cache\
+  | \\.venv\
+  | build\
+  | dist\
+)/\
+'''
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+strict_optional = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "pandas",
+    "sklearn.*",
+    "plotly.*",
+    "docx.*",
+    "weasyprint",
+    "faiss",
+    "sentence_transformers",
+    "pytesseract",
+    "pdf2image",
+    "PIL.*",
+    "predictive_maintenance_mcp.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --strict-markers --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "ml: marks tests that require ML models",
+    "real_data: marks tests that use real bearing data samples",
+    "asyncio: marks tests as async (requires pytest-asyncio)",
+]

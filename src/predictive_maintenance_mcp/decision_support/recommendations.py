@@ -7,18 +7,19 @@ Rule-based recommendation engine for vibration-based maintenance decisions.
 from __future__ import annotations
 
 from ..diagnostics.bearing_analyzer import FAULT_TYPE_CANONICAL
+from ..i18n import t
 
-# Mapping from fault type keyword to specific maintenance advice. Bearing
-# keys are the canonical fault vocabulary (bearing_analyzer
+# Mapping from fault type keyword to translation key for maintenance advice.
+# Bearing keys are the canonical fault vocabulary (bearing_analyzer
 # FAULT_TYPE_CANONICAL values); the rest are machine-level faults.
 _FAULT_RECOMMENDATIONS: dict[str, str] = {
-    "outer_race": "Replace bearing, check alignment",
-    "inner_race": "Replace bearing, inspect shaft condition",
-    "ball": "Replace bearing, check lubrication system",
-    "cage": "Replace bearing, investigate contamination",
-    "misalignment": "Realign coupling, check foundation bolts",
-    "unbalance": "Balance rotor, check for deposit buildup",
-    "looseness": "Tighten foundation bolts, inspect mounting",
+    "outer_race": "rec.fault.outer_race",
+    "inner_race": "rec.fault.inner_race",
+    "ball": "rec.fault.ball",
+    "cage": "rec.fault.cage",
+    "misalignment": "rec.fault.misalignment",
+    "unbalance": "rec.fault.unbalance",
+    "looseness": "rec.fault.looseness",
 }
 
 # The bearing part of the vocabulary MUST mirror the canonical fault types
@@ -34,6 +35,7 @@ VALID_FAULT_TYPES: tuple[str, ...] = tuple(sorted(_FAULT_RECOMMENDATIONS))
 def generate_recommendations(
     severity_zone: str,
     fault_types: list[str] | None = None,
+    lang: str = "en",
 ) -> list[dict]:
     """Generate maintenance recommendations based on severity and faults.
 
@@ -47,6 +49,7 @@ def generate_recommendations(
         fault_types: Optional list of detected fault keywords from the
             closed vocabulary ``VALID_FAULT_TYPES`` (e.g.
             ``["outer_race", "misalignment"]``).
+        lang: Language code for translations.
 
     Returns:
         List of recommendation dicts, each containing ``action``,
@@ -70,56 +73,38 @@ def generate_recommendations(
     zone = severity_zone.upper()
 
     zone_map: dict[str, tuple[str, str, str]] = {
-        "A": (
-            "Continue normal monitoring",
-            "low",
-            "Vibration levels are within acceptable limits. "
-            "Maintain regular monitoring schedule.",
-        ),
-        "B": (
-            "Schedule inspection",
-            "medium",
-            "Vibration levels are elevated. "
-            "Schedule a visual and operational inspection.",
-        ),
-        "C": (
-            "Plan maintenance within 2 weeks",
-            "high",
-            "Vibration levels are unsatisfactory. "
-            "Plan corrective maintenance within two weeks.",
-        ),
-        "D": (
-            "Immediate shutdown recommended",
-            "critical",
-            "Vibration levels are unacceptable and may cause damage. "
-            "Immediate shutdown and inspection recommended.",
-        ),
+        "A": ("rec.zone.A.action", "low", "rec.zone.A.description"),
+        "B": ("rec.zone.B.action", "medium", "rec.zone.B.description"),
+        "C": ("rec.zone.C.action", "high", "rec.zone.C.description"),
+        "D": ("rec.zone.D.action", "critical", "rec.zone.D.description"),
     }
 
     if zone not in zone_map:
-        action, urgency, description = (
-            "Review vibration data manually",
+        action_key, urgency, desc_key = (
+            "rec.zone.unknown.action",
             "medium",
-            f"Unknown severity zone '{severity_zone}'. "
-            "Manual review of vibration data is recommended.",
+            "rec.zone.unknown.description",
         )
+        action = t(action_key, lang)
+        description = t(desc_key, lang, zone=severity_zone)
     else:
-        action, urgency, description = zone_map[zone]
+        action_key, urgency, desc_key = zone_map[zone]
+        action = t(action_key, lang)
+        description = t(desc_key, lang)
 
     recommendations: list[dict] = [
         {"action": action, "urgency": urgency, "description": description}
     ]
 
-    # Append fault-specific recommendations when available.
     if fault_types:
         for fault in fault_types:
             key = fault.lower()
             if key in _FAULT_RECOMMENDATIONS:
                 recommendations.append(
                     {
-                        "action": _FAULT_RECOMMENDATIONS[key],
+                        "action": t(_FAULT_RECOMMENDATIONS[key], lang),
                         "urgency": urgency,
-                        "description": f"Detected fault: {fault}.",
+                        "description": t("rec.fault.description", lang, fault=fault),
                     }
                 )
 

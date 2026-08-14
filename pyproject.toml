@@ -81,16 +81,11 @@ packages = [
     "predictive_maintenance_mcp.decision_support",
     "predictive_maintenance_mcp.prognostics",
     "predictive_maintenance_mcp.mcp_tools",
+    "predictive_maintenance_mcp.i18n",
 ]
 
 [tool.setuptools.package-dir]
-predictive_maintenance_mcp = "src"
-"predictive_maintenance_mcp.signal_acquisition" = "src/signal_acquisition"
-"predictive_maintenance_mcp.signal_processing" = "src/signal_processing"
-"predictive_maintenance_mcp.diagnostics" = "src/diagnostics"
-"predictive_maintenance_mcp.decision_support" = "src/decision_support"
-"predictive_maintenance_mcp.mcp_tools" = "src/mcp_tools"
-"predictive_maintenance_mcp.prognostics" = "src/prognostics"
+"" = "src"
 
 [project.optional-dependencies]
 docs = [

@@ -64,9 +64,11 @@ _ACCEPTABLE_ZONES = ("A", "B")
 _HEADLINE_ORDER = ("envelope_magnitude", "rms_velocity", "anomaly_ratio")
 
 
-def _fault_label(canonical: Optional[str]) -> str:
+def _fault_label(canonical: Optional[str], lang: str = "en") -> str:
     """Render a canonical fault type as prose ('outer_race' -> 'outer race')."""
-    return canonical.replace("_", " ") if canonical else ""
+    if not canonical:
+        return ""
+    return t(f"fault.label.{canonical}", lang)
 
 
 def _acronym_for(canonical: Optional[str]) -> str:
@@ -87,7 +89,7 @@ def _build_iso_block(iso: dict, lang: str = "en") -> dict:
     if iso.get("status") == "refused":
         return {
             "status": REFUSED,
-            "statement": (f"ISO severity was not assessed. {iso['reason']}"),
+            "statement": t("diag.iso.refused", lang, reason=iso['reason']),
             "reason": iso["reason"],
             "remedy": iso["remedy"],
             "standard_note": None,
@@ -99,11 +101,11 @@ def _build_iso_block(iso: dict, lang: str = "en") -> dict:
     description = iso.get("zone_description", "")
     boundaries = iso.get("boundaries", {})
 
-    statement = (
-        f"ISO 20816-3: RMS velocity {rms:.2f} mm/s places this machine in "
-        f"Zone {zone} ({severity}) for machine group "
-        f"{iso.get('machine_group')} on a {iso.get('support_type')} support. "
-        f"{description}"
+    statement = t("diag.iso.assessed", lang,
+        rms=rms, zone=zone, severity=severity,
+        machine_group=iso.get('machine_group', ''),
+        support_type=iso.get('support_type', ''),
+        description=description
     ).strip()
 
     return {
@@ -114,8 +116,6 @@ def _build_iso_block(iso: dict, lang: str = "en") -> dict:
         "rms_velocity_mm_s": rms,
         "boundaries": boundaries,
         "evaluation_band": iso.get("frequency_range"),
-        # Verbatim from iso20816 — the caveat that the 2022 edition merges
-        # zones A and B travels with every verdict or it travels with none.
         "standard_note": iso.get("threshold_provenance"),
     }
 
@@ -130,18 +130,8 @@ def _build_bearing_block(bearing_faults: Optional[dict], lang: str = "en") -> di
     if not bearing_faults:
         return {
             "status": ABSENT,
-            "statement": (
-                "Bearing characteristic-frequency matching was not attempted: "
-                "no bearing designation was supplied for this signal, so BPFO, "
-                "BPFI, BSF and FTF could not be computed. Without it, a "
-                "spectral peak cannot be attributed to a specific bearing "
-                "element."
-            ),
-            "remedy": (
-                "Re-run the diagnosis with a bearing_id present in the "
-                "catalog, or add the bearing designation to the signal's "
-                "companion metadata."
-            ),
+            "statement": t("diag.bearing.absent", lang),
+            "remedy": t("diag.bearing.absent_remedy", lang),
             "rows": [],
         }
 
@@ -164,22 +154,22 @@ def _build_bearing_block(bearing_faults: Optional[dict], lang: str = "en") -> di
     matched = [r for r in rows if r["matched"]]
     if matched:
         parts = [
-            f"{r['fault_type']} expected at {r['expected_hz']:.2f} Hz, "
-            f"measured at {r['measured_hz']:.2f} Hz "
-            f"({r['deviation_pct']:.2f}% deviation)"
+            t("diag.bearing.matched_part", lang,
+                fault_type=r['fault_type'],
+                expected_hz=r['expected_hz'],
+                measured_hz=r['measured_hz'],
+                deviation_pct=r['deviation_pct']
+            )
             for r in matched
         ]
-        statement = (
-            f"Bearing {bearing_faults.get('bearing_id')} at "
-            f"{bearing_faults.get('shaft_frequency_hz', 0.0):.1f} Hz shaft "
-            f"speed: {'; '.join(parts)}. The remaining characteristic "
-            f"frequencies did not match."
+        statement = t("diag.bearing.matched_statement", lang,
+            bearing_id=bearing_faults.get('bearing_id', ''),
+            shaft_freq=bearing_faults.get('shaft_frequency_hz', 0.0),
+            matched_parts='; '.join(parts)
         )
     else:
-        statement = (
-            f"Bearing {bearing_faults.get('bearing_id')}: none of the four "
-            f"characteristic frequencies (BPFO, BPFI, BSF, FTF) matched a "
-            f"peak in the envelope spectrum within tolerance."
+        statement = t("diag.bearing.no_match", lang,
+            bearing_id=bearing_faults.get('bearing_id', '')
         )
 
     return {
@@ -202,16 +192,8 @@ def _build_anomaly_block(anomaly: Optional[dict], lang: str = "en") -> dict:
     if not anomaly:
         return {
             "status": ABSENT,
-            "statement": (
-                "No anomaly-model verdict is available for this signal: no "
-                "trained model was found. The pattern-level check that would "
-                "corroborate or contradict the severity reading is therefore "
-                "missing from this assessment."
-            ),
-            "remedy": (
-                "Train an anomaly model on healthy signals from this machine, "
-                "then re-run the diagnosis."
-            ),
+            "statement": t("diag.anomaly.absent", lang),
+            "remedy": t("diag.anomaly.absent_remedy", lang),
         }
 
     health = anomaly["overall_health"]
@@ -224,9 +206,8 @@ def _build_anomaly_block(anomaly: Optional[dict], lang: str = "en") -> dict:
     )
     return {
         "status": ASSESSED,
-        "statement": (
-            f"Anomaly model verdict: {health} — {counted} "
-            f"({ratio * 100:.1f}%) fall outside the learned healthy pattern."
+        "statement": t("diag.anomaly.assessed", lang,
+            health=health, counted=counted, ratio_pct=ratio * 100
         ),
         "overall_health": health,
         "anomaly_ratio": ratio,
@@ -241,17 +222,12 @@ def _build_anomaly_block(anomaly: Optional[dict], lang: str = "en") -> dict:
 
 def _build_energy_block(stft_summary: dict, lang: str = "en") -> dict:
     """Author the spectral-energy block from the STFT band breakdown."""
-    # compute_stft_spectrogram emits a list of {"band", "energy"} entries.
     entries = stft_summary.get("energy_per_band") or []
     bands = {entry["band"]: entry["energy"] for entry in entries}
     if not bands:
         return {
             "status": ABSENT,
-            "statement": (
-                "No spectral energy distribution is available: the STFT band "
-                "breakdown was not computed, so the frequency region carrying "
-                "the signal's energy cannot be named."
-            ),
+            "statement": t("diag.energy.absent", lang),
             "bands": {},
         }
 
@@ -260,12 +236,8 @@ def _build_energy_block(stft_summary: dict, lang: str = "en") -> dict:
     share = (bands[dominant] / total * 100) if total else 0.0
     return {
         "status": ASSESSED,
-        "statement": (
-            f"Spectral energy is concentrated in the {dominant} band "
-            f"({share:.0f}% of total STFT energy). High-frequency dominance is "
-            f"consistent with impulsive excitation of structural resonances; "
-            f"low-frequency dominance is consistent with shaft-order sources "
-            f"such as unbalance or misalignment."
+        "statement": t("diag.energy.assessed", lang,
+            dominant=dominant, share=share
         ),
         "bands": dict(bands),
         "dominant_band": dominant,
@@ -289,40 +261,26 @@ def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict, la
             ),
         )
         canonical = primary["fault_canonical"]
-        label = _fault_label(canonical)
+        label = _fault_label(canonical, lang)
         return {
-            "statement": (
-                f"A {label} fault is indicated: the envelope spectrum peak "
-                f"matches the {primary['fault_type']} characteristic frequency "
-                f"of this bearing within {primary['deviation_pct']:.2f}%."
+            "statement": t("diag.verdict.fault_indicated", lang,
+                label=label,
+                fault_type=primary['fault_type'],
+                deviation_pct=primary['deviation_pct']
             ),
             "fault_canonical": canonical,
             "fault_acronym": primary["fault_type"],
         }
 
     if bearing_block["status"] == ASSESSED:
-        headline = (
-            "No bearing fault is indicated: no characteristic frequency "
-            "matched a peak in the envelope spectrum."
-        )
+        headline = t("diag.verdict.no_bearing_fault", lang)
     else:
-        headline = (
-            "No bearing fault verdict was reached, because characteristic-"
-            "frequency matching was not attempted."
-        )
+        headline = t("diag.verdict.no_bearing_verdict", lang)
 
     if iso_block["status"] == ASSESSED and iso_block["zone"] not in _ACCEPTABLE_ZONES:
-        headline += (
-            f" Broadband vibration is nonetheless elevated "
-            f"(Zone {iso_block['zone']}), so a non-bearing source should be "
-            f"considered."
-        )
+        headline += t("diag.verdict.non_bearing_source", lang, zone=iso_block['zone'])
     elif anomaly_block.get("overall_health") in ("Faulty", "Suspicious"):
-        headline += (
-            " The anomaly model nonetheless flags this signal as departing "
-            "from the learned healthy pattern, so a source outside the "
-            "bearing's characteristic frequencies should be considered."
-        )
+        headline += t("diag.verdict.anomaly_flags", lang)
 
     return {"statement": headline, "fault_canonical": None, "fault_acronym": ""}
 
@@ -342,14 +300,15 @@ def _build_evidence(
         if not row["matched"]:
             continue
         acronym = row["fault_type"]
-        sentence = (
-            f"{acronym} match: expected {row['expected_hz']:.2f} Hz, measured "
-            f"{row['measured_hz']:.2f} Hz, deviation {row['deviation_pct']:.2f}%."
+        sentence = t("diag.evidence.bearing_match", lang,
+            acronym=acronym,
+            expected_hz=row['expected_hz'],
+            measured_hz=row['measured_hz'],
+            deviation_pct=row['deviation_pct']
         )
         if row["harmonics"]:
-            sentence += (
-                f" {row['harmonics']} harmonic(s) of {acronym} are also "
-                f"present, which a single noise peak would not produce."
+            sentence += t("diag.evidence.harmonics_add", lang,
+                harmonics=row["harmonics"], acronym=acronym
             )
         statements.append(sentence)
 
@@ -362,7 +321,7 @@ def _build_evidence(
 
     peak = diagnosis.get("fft_summary", {}).get("peak_frequency_hz")
     if peak is not None:
-        statements.append(f"Dominant frequency in the raw spectrum: {peak:.1f} Hz.")
+        statements.append(t("diag.evidence.dominant_freq", lang, peak=peak))
 
     return {
         "strength": diagnosis.get("evidence_strength", "none"),
@@ -392,8 +351,10 @@ def _build_disagreements(
     dissenting: list[str] = []
     if anomaly_block.get("overall_health") in ("Faulty", "Suspicious"):
         dissenting.append(
-            f"the anomaly model ({anomaly_block['overall_health']}, "
-            f"{anomaly_block['anomaly_ratio'] * 100:.0f}% of segments)"
+            t("diag.disagreement.anomaly_dissent", lang,
+                health=anomaly_block['overall_health'],
+                ratio_pct=anomaly_block['anomaly_ratio'] * 100
+            )
         )
     strong_matches = [
         r
@@ -402,22 +363,16 @@ def _build_disagreements(
     ]
     if strong_matches:
         names = ", ".join(r["fault_type"] for r in strong_matches)
-        dissenting.append(f"the characteristic-frequency match ({names})")
+        dissenting.append(t("diag.disagreement.match_dissent", lang, names=names))
 
     if not dissenting:
         return []
 
     return [
         {
-            "statement": (
-                f"Indicators disagree. Zone {iso_block['zone']} describes "
-                f"overall vibration energy as acceptable, while "
-                f"{' and '.join(dissenting)} indicate a developing fault. "
-                f"These are not contradictory: a localised defect can be "
-                f"unambiguous in the envelope spectrum while the broadband "
-                f"level it contributes is still low. The fault-pattern "
-                f"evidence governs the recommended action; the ISO zone "
-                f"describes how far the condition has progressed."
+            "statement": t("diag.disagreement.statement", lang,
+                zone=iso_block['zone'],
+                dissenting=' and '.join(dissenting)
             ),
             "governing_indicator": "fault-pattern evidence",
             "deferring_indicator": f"ISO zone {iso_block['zone']}",
@@ -445,9 +400,7 @@ def _build_recommendations(
             {
                 "action": iso_block["remedy"],
                 "urgency": "medium",
-                "description": (
-                    "The severity verdict is unavailable until this is " "resolved."
-                ),
+                "description": t("diag.rec.severity_unavailable", lang),
                 "motivation": iso_block["reason"],
                 "evidence": [iso_block["statement"]],
             }
@@ -463,30 +416,24 @@ def _build_recommendations(
     ]
 
     if zone is not None:
-        # generate_recommendations emits the zone action(s) first, then one
-        # entry per fault type in the order given. Split on that structure
-        # rather than on the wording of the description: matching a prose
-        # prefix would silently mislabel every recommendation the day that
-        # sentence is reworded.
-        zone_only = generate_recommendations(severity_zone=zone)
-        base = generate_recommendations(severity_zone=zone, fault_types=fault_types)
+        zone_only = generate_recommendations(severity_zone=zone, lang=lang)
+        base = generate_recommendations(severity_zone=zone, fault_types=fault_types, lang=lang)
         for index, entry in enumerate(base):
             fault_index = index - len(zone_only)
             if fault_index >= 0:
                 acronym = _acronym_for(fault_types[fault_index])
-                motivation = (
-                    "The characteristic frequency of this bearing element "
-                    "matched a peak in the envelope spectrum within tolerance"
-                    + (f" ({acronym})." if acronym else ".")
+                motivation = t("diag.rec.fault_motivation", lang,
+                    acronym_suffix=t("diag.rec.fault_motivation_acronym", lang, acronym=acronym) if acronym else "."
                 )
                 evidence = [bearing_block["statement"]]
             else:
                 severity = iso_block.get("severity_level")
-                motivation = (
-                    f"ISO Zone {zone} is classified as {severity.lower()}."
-                    if severity
-                    else f"ISO Zone {zone}."
-                )
+                if severity:
+                    motivation = t("diag.rec.iso_motivation_severity", lang,
+                        zone=zone, severity_lower=severity.lower()
+                    )
+                else:
+                    motivation = t("diag.rec.iso_motivation_plain", lang, zone=zone)
                 evidence = [iso_block["statement"]]
             recommendations.append(
                 {**entry, "motivation": motivation, "evidence": evidence}
@@ -496,12 +443,9 @@ def _build_recommendations(
         recommendations.insert(
             0,
             {
-                "action": ("Treat this as actionable despite the acceptable ISO zone"),
+                "action": t("diag.rec.disagreement_action", lang),
                 "urgency": "medium",
-                "description": (
-                    "Fault-pattern evidence and the severity zone describe "
-                    "different stages of the same condition."
-                ),
+                "description": t("diag.rec.disagreement_description", lang),
                 "motivation": disagreements[0]["statement"],
                 "evidence": [disagreements[0]["statement"]],
             },
@@ -512,10 +456,7 @@ def _build_recommendations(
             {
                 "action": anomaly_block["remedy"],
                 "urgency": "low",
-                "description": (
-                    "Pattern-level corroboration is unavailable without a "
-                    "trained model."
-                ),
+                "description": t("diag.rec.anomaly_absent_description", lang),
                 "motivation": anomaly_block["statement"],
                 "evidence": [anomaly_block["statement"]],
             }
@@ -545,32 +486,17 @@ def build_baseline_comparison(
     if not baseline:
         return {
             "status": ABSENT,
-            "statement": (
-                "No healthy baseline was supplied for this machine, so the "
-                "readings below are absolute rather than relative. Whether "
-                "this condition is new, stable, or worsening cannot be "
-                "determined from a single acquisition."
-            ),
-            "remedy": (
-                "Re-run the diagnosis with a baseline signal id from the same "
-                "machine in a known-good state."
-            ),
+            "statement": t("diag.baseline.absent", lang),
+            "remedy": t("diag.baseline.absent_remedy", lang),
             "deltas": [],
         }
 
-    incompatible = _baseline_incompatibility(diagnosis, baseline)
+    incompatible = _baseline_incompatibility(diagnosis, baseline, lang)
     if incompatible:
         return {
             "status": REFUSED,
-            "statement": (
-                f"Baseline comparison was refused: {incompatible} A delta "
-                f"between measurements taken under different conditions "
-                f"would look like a change in machine condition."
-            ),
-            "remedy": (
-                "Supply a baseline acquired from the same measurement point "
-                "under the same declared conditions."
-            ),
+            "statement": t("diag.baseline.refused", lang, incompatible=incompatible),
+            "remedy": t("diag.baseline.refused_remedy", lang),
             "deltas": [],
         }
 
@@ -587,32 +513,25 @@ def build_baseline_comparison(
     if not deltas:
         return {
             "status": ABSENT,
-            "statement": (
-                f"A baseline was supplied ({baseline.get('signal_id')}), but "
-                f"no indicator could be compared: the two diagnoses share no "
-                f"assessed block. Whether this condition is new, stable, or "
-                f"worsening cannot be determined."
+            "statement": t("diag.baseline.no_indicators", lang,
+                signal_id=baseline.get('signal_id', '')
             ),
-            "remedy": (
-                "Ensure both signals declare their unit so the severity and "
-                "anomaly blocks are assessed rather than refused."
-            ),
+            "remedy": t("diag.baseline.no_indicators_remedy", lang),
             "deltas": [],
         }
 
     moved = [d for d in deltas if d["direction"] != "unchanged"]
     if not moved:
-        statement = (
-            f"Compared with baseline {baseline.get('signal_id')}: no "
-            f"measurable change in any compared indicator. The condition "
-            f"described above is stable, not developing."
+        statement = t("diag.baseline.stable", lang,
+            signal_id=baseline.get('signal_id', '')
         )
     else:
         headline = min(moved, key=lambda d: _HEADLINE_ORDER.index(d["indicator"]))
-        statement = (
-            f"Compared with baseline {baseline.get('signal_id')}: "
-            f"{len(moved)} of {len(deltas)} indicators moved. "
-            f"{headline['statement']}"
+        statement = t("diag.baseline.moved", lang,
+            signal_id=baseline.get('signal_id', ''),
+            moved_count=len(moved),
+            total_count=len(deltas),
+            headline_statement=headline['statement']
         )
 
     return {
@@ -624,7 +543,7 @@ def build_baseline_comparison(
     }
 
 
-def _baseline_incompatibility(diagnosis: dict, baseline: dict) -> str:
+def _baseline_incompatibility(diagnosis: dict, baseline: dict, lang: str = "en") -> str:
     """Return a reason the two signals cannot be compared, or an empty string."""
     signal_iso = diagnosis.get("iso_severity", {})
     baseline_iso = baseline.get("iso_severity", {})
@@ -635,17 +554,15 @@ def _baseline_incompatibility(diagnosis: dict, baseline: dict) -> str:
         signal_unit = signal_iso.get("original_unit")
         baseline_unit = baseline_iso.get("original_unit")
         if signal_unit != baseline_unit:
-            return (
-                f"the signal declares its unit as '{signal_unit}' while the "
-                f"baseline declares '{baseline_unit}'."
+            return t("diag.baseline.incompatible_unit", lang,
+                signal_unit=signal_unit, baseline_unit=baseline_unit
             )
 
     signal_bearing = diagnosis.get("bearing_id")
     baseline_bearing = baseline.get("bearing_id")
     if signal_bearing and baseline_bearing and signal_bearing != baseline_bearing:
-        return (
-            f"the signal was analysed against bearing '{signal_bearing}' and "
-            f"the baseline against '{baseline_bearing}'."
+        return t("diag.baseline.incompatible_bearing", lang,
+            signal_bearing=signal_bearing, baseline_bearing=baseline_bearing
         )
 
     return ""
@@ -680,14 +597,10 @@ def _rms_delta(diagnosis: dict, baseline: dict, lang: str = "en") -> Optional[di
     delta = now - then
     direction = _direction(delta, 0.005)
     if direction == "unchanged":
-        statement = (
-            f"RMS velocity is unchanged against baseline "
-            f"({now:.2f} mm/s, was {then:.2f} mm/s)."
-        )
+        statement = t("diag.delta.rms_unchanged", lang, now=now, then=then)
     else:
-        statement = (
-            f"RMS velocity is {abs(delta):.2f} mm/s {direction} than baseline "
-            f"({now:.2f} mm/s, was {then:.2f} mm/s)."
+        statement = t("diag.delta.rms_changed", lang,
+            delta_abs=abs(delta), direction=direction, now=now, then=then
         )
     return {
         "indicator": "rms_velocity",
@@ -711,15 +624,10 @@ def _anomaly_delta(diagnosis: dict, baseline: dict, lang: str = "en") -> Optiona
     delta = now - then
     direction = _direction(delta, 0.05)
     if direction == "unchanged":
-        statement = (
-            f"The share of anomalous segments is unchanged against baseline "
-            f"({now:.0f}%, was {then:.0f}%) — a difference of under one "
-            f"percentage point."
-        )
+        statement = t("diag.delta.anomaly_unchanged", lang, now=now, then=then)
     else:
-        statement = (
-            f"The share of anomalous segments is {abs(delta):.0f} percentage "
-            f"points {direction} than baseline ({now:.0f}%, was {then:.0f}%)."
+        statement = t("diag.delta.anomaly_changed", lang,
+            delta_abs=abs(delta), direction=direction, now=now, then=then
         )
     return {
         "indicator": "anomaly_ratio",
@@ -771,15 +679,10 @@ def _envelope_delta(diagnosis: dict, baseline: dict, lang: str = "en") -> Option
     direction = _direction(delta_db, 0.05)
     acronym = matched["fault_type"]
     if direction == "unchanged":
-        statement = (
-            f"Envelope amplitude at the {acronym} frequency is unchanged "
-            f"against baseline."
-        )
+        statement = t("diag.delta.envelope_unchanged", lang, acronym=acronym)
     else:
-        statement = (
-            f"Envelope amplitude at the {acronym} frequency is "
-            f"{abs(delta_db):.1f} dB {direction} than baseline — the defect "
-            f"signature itself, not overall machine noise."
+        statement = t("diag.delta.envelope_changed", lang,
+            acronym=acronym, delta_db=abs(delta_db), direction=direction
         )
     return {
         "indicator": "envelope_magnitude",

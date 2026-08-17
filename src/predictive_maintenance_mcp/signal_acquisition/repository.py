@@ -528,7 +528,14 @@ class SignalRepository:
                 import pandas as pd
 
                 df = pd.read_csv(filepath, header=None)
-                return df.iloc[:, 0].values
+                arr = df.to_numpy(dtype=float)
+                if arr.ndim == 2 and arr.shape[1] >= 2:
+                    first = arr[:, 0]
+                    second = arr[:, 1]
+                    if second.size > 1 and np.all(np.diff(first) > 0):
+                        return second
+                    return first
+                return arr.reshape(-1) if arr.ndim == 2 else arr
             elif filepath.suffix == ".mat":
                 from scipy.io import loadmat
 

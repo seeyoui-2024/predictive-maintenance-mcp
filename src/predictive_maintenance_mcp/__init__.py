@@ -12,6 +12,19 @@ __version__ = "0.12.0"
 __author__ = "Luigi Gianpio Di Maggio"
 __license__ = "MIT"
 
-from .server import mcp, main
+
+def main() -> None:
+    """CLI entry point. Delegates to server.main()."""
+    from .server import main as _main
+    _main()
+
+
+def __getattr__(name: str):
+    """Lazy module-level __getattr__ for deferred imports."""
+    if name == "mcp":
+        from .server import mcp
+        return mcp
+    raise AttributeError(f"module 'predictive_maintenance_mcp' has no attribute {name!r}")
+
 
 __all__ = ["mcp", "main", "__version__"]

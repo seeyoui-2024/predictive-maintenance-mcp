@@ -29,7 +29,9 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
     Load signal data from file.
 
     Supported formats:
-        - .csv, .txt: Comma/tab-separated values (first column used)
+        - .csv, .txt: Comma/tab-separated values. A single column is used
+          directly; a two-column file with a strictly increasing first
+          column (time,value) uses the SECOND column as the signal.
         - .npy: NumPy binary array
         - .mat: MATLAB files (first numeric variable used)
         - .wav: WAV audio files (first channel, normalized to [-1, 1])
@@ -56,7 +58,16 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
 
         elif file_path.suffix in [".csv", ".txt"]:
             df = pd.read_csv(file_path, header=None)
-            return df.iloc[:, 0].values
+            arr = np.asarray(df.to_numpy(), dtype=float)
+            if arr.ndim == 2 and arr.shape[1] >= 2:
+                first = arr[:, 0]
+                second = arr[:, 1]
+                # Two-column time,value format: a strictly increasing first
+                # column is a time axis, so the signal is the second column.
+                if second.size > 1 and np.all(np.diff(first) > 0):
+                    return second
+                return first
+            return arr.reshape(-1) if arr.ndim == 2 else arr
 
         elif file_path.suffix == ".mat":
             from scipy.io import loadmat

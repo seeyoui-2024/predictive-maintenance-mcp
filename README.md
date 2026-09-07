@@ -212,6 +212,40 @@ The codebase follows a **modular architecture** organized around the ISO 13374 S
 - **Privacy-first** — raw vibration data never leaves your machine; only computed results flow to the LLM
 - **LLM-agnostic** — works with Claude, ChatGPT, Microsoft Copilot Studio, or any MCP-compatible client. Use [Ollama](docs/OLLAMA_GUIDE.md) for fully air-gapped deployments
 - **Modular** — use only the tools you need, extend with your own
+- **Bilingual (EN/ZH)** — all 8 report types support full Chinese/English translation with client-side language toggle
+
+---
+
+## Bilingual Reports
+
+All 8 report types (FFT, Envelope, ISO, Plot Signal, PCA, Feature Comparison, Integrated Diagnostic, DOCX) support **full Chinese/English translation**:
+
+```python
+# Generate English report (default)
+generate_fft_report(signal_id="baseline_1.csv")
+
+# Generate Chinese report
+generate_fft_report(signal_id="baseline_1.csv", language="zh")
+```
+
+**HTML reports** include a client-side language toggle button that switches all content without page reload:
+- Dynamic data (verdict, evidence, severity, recommendations)
+- Section titles and labels
+- Chart annotations (Plotly)
+
+**DOCX reports** are generated with language-specific content (no toggle).
+
+**Supported report types:**
+| Report | HTML Toggle | DOCX |
+|--------|-------------|------|
+| FFT Spectrum | Yes | Yes |
+| Envelope Analysis | Yes | Yes |
+| ISO 20816-3 | Yes | Yes |
+| Time-Domain Signal | Yes | Yes |
+| PCA Visualization | Yes | Yes |
+| Feature Comparison | Yes | Yes |
+| Integrated Diagnostic | Yes | Yes |
+| DOCX Report | N/A | Yes |
 
 ---
 

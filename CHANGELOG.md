@@ -14,6 +14,11 @@ nothing is inferred from file content or names; translating a vendor's
 metadata into the declaration is the user's (or an external adapter's) job.
 
 ### Added
+- **Full bilingual (EN/ZH) report generation** — all 8 report types (FFT, Envelope, ISO, Plot Signal, PCA, Feature Comparison, Integrated Diagnostic, DOCX) now support `language` parameter for Chinese/English translation.
+- **Client-side language toggle** — HTML reports include a toggle button that switches all content (dynamic data, section titles, chart annotations) without page reload.
+- **i18n module** (`src/i18n.py`) — 100+ translation keys for EN/ZH including dynamic content (verdict, evidence, severity, recommendations).
+- **Integrated diagnostic report** — all 30 dynamic elements wrapped in `data-i18n-val-en/zh` attributes for reliable client-side switching.
+- **DOCX Chinese translation** — diagnostic summary, ISO evaluation, and section titles fully translated.
 - **Blind, reproducible CWRU diagnostic benchmark** (`benchmarks/cwru/`,
   `python -m benchmarks.cwru all`). Measures the deterministic diagnostic
   pipeline on the CWRU Bearing Data Center 12 kHz drive-end subset (60 fault

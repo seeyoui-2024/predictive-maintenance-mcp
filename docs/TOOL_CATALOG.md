@@ -60,6 +60,20 @@ The complete endpoint reference for the Predictive Maintenance MCP server: every
 | `generate_feature_comparison_report` | Cross-signal feature comparison |
 | `list_html_reports` | Report management (list all or inspect one) |
 
+### Language Parameter
+
+All report generation tools support a `language` parameter for bilingual output:
+
+```python
+# English (default)
+generate_fft_report(signal_id="baseline_1.csv")
+
+# Chinese
+generate_fft_report(signal_id="baseline_1.csv", language="zh")
+```
+
+**HTML reports** include a client-side language toggle button that switches all content without page reload.
+
 ## Prognostics (2)
 
 | Tool | Description |

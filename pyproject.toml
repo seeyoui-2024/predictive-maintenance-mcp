@@ -1,0 +1,309 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "predictive-maintenance-mcp"
+version = "0.12.0"
+description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 37 MCP endpoints for vibration analysis, bearing fault detection, ISO 20816 severity assessment, ML anomaly detection, and remaining useful life estimation via natural language"
+readme = "README.md"
+authors = [
+    { name = "Luigi Di Maggio", email = "luigi.dimaggio@polito.it" }
+]
+license = { text = "MIT" }
+keywords = [
+    "predictive-maintenance-ai-agent",
+    "condition-monitoring-ai-agent",
+    "machine-maintenance-copilot",
+    "predictive-maintenance",
+    "condition-monitoring",
+    "vibration-analysis",
+    "bearing-fault-detection",
+    "bearing-fault-diagnosis",
+    "fault-diagnosis",
+    "model-context-protocol",
+    "mcp-server",
+    "claude-ai",
+    "claude-agents",
+    "claude-skills",
+    "claude-code-plugin",
+    "signal-processing",
+    "anomaly-detection",
+    "envelope-analysis",
+    "iso20816",
+    "industry-4-0",
+    "industrial-iot",
+    "machine-learning-condition-monitoring",
+    "remaining-useful-life",
+    "ai-vibration-diagnostics",
+    "machine-health-monitoring"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.11"
+dependencies = [
+    # 2.x floor is load-bearing, not caution: mcp 2.0.0 removed
+    # `mcp.server.fastmcp` (-> `mcp.server.mcpserver`, FastMCP -> MCPServer)
+    # and dropped Settings.host/port. Neither has a 1.x-compatible spelling,
+    # so the two APIs cannot be supported from one source tree.
+    #
+    # Context.debug/info/warning/error are NOT affected: they remain
+    # `async def` in 2.x and must still be awaited. What changed is that they
+    # carry @deprecated (SEP-2577, logging capability).
+    #
+    # As of v0.12.0 there are no such call sites left: progress narration moved
+    # to the stdlib logger, so `ctx` survives only as a parameter annotation.
+    # The rule still applies to any that come back -- an unawaited coroutine
+    # silently drops the message, and the suite mocks ctx everywhere, so no
+    # test would fail. Two detectors cover that, and both must stay working:
+    #   - mypy `unused-coroutine`, which is why `mcp` is deliberately excluded
+    #     from the ignore_missing_imports allowlist in [tool.mypy] below
+    #   - the "coroutine was never awaited" filterwarnings rule in
+    #     [tool.pytest.ini_options], which is the AsyncMock-proof one
+    "mcp[cli]>=2.0.0,<3.0.0",
+    "numpy>=2.3.3",
+    "pandas>=2.3.3",
+    "plotly>=5.24.0",
+    "pydantic>=2.12.0",
+    "pypdf>=4.0",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.16.2",
+]
+
+[project.urls]
+Homepage = "https://lgdimaggio.github.io/predictive-maintenance-mcp/"
+Repository = "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
+Documentation = "https://lgdimaggio.github.io/predictive-maintenance-mcp/"
+Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
+Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
+Changelog = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+predictive-maintenance-mcp = "predictive_maintenance_mcp.server:main"
+
+[tool.setuptools]
+packages = [
+    "predictive_maintenance_mcp",
+    "predictive_maintenance_mcp.signal_acquisition",
+    "predictive_maintenance_mcp.signal_processing",
+    "predictive_maintenance_mcp.diagnostics",
+    "predictive_maintenance_mcp.decision_support",
+    "predictive_maintenance_mcp.prognostics",
+    "predictive_maintenance_mcp.mcp_tools",
+]
+
+[tool.setuptools.package-dir]
+predictive_maintenance_mcp = "src"
+"predictive_maintenance_mcp.signal_acquisition" = "src/signal_acquisition"
+"predictive_maintenance_mcp.signal_processing" = "src/signal_processing"
+"predictive_maintenance_mcp.diagnostics" = "src/diagnostics"
+"predictive_maintenance_mcp.decision_support" = "src/decision_support"
+"predictive_maintenance_mcp.mcp_tools" = "src/mcp_tools"
+"predictive_maintenance_mcp.prognostics" = "src/prognostics"
+
+[project.optional-dependencies]
+docs = [
+    "pypdf>=4.0",
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "sphinx-autodoc-typehints>=2.0",
+]
+ml = [
+    "scikit-learn>=1.4",
+]
+viz = [
+    "plotly>=5.20",
+]
+vector-search = [
+    "faiss-cpu>=1.7",
+    "sentence-transformers>=2.0",
+]
+ocr = [
+    "pytesseract>=0.3",
+    "Pillow>=10.0",
+    "pdf2image>=1.16",
+]
+docx = [
+    "python-docx>=1.0",
+]
+pdf = [
+    # Renders the integrated diagnostic report's own HTML to PDF, so both
+    # renderings come from one document rather than two layouts.
+    "weasyprint>=60.0",
+]
+sse = [
+    "uvicorn>=0.30",
+]
+full = [
+    "predictive-maintenance-mcp[docs,ml,viz,vector-search,ocr,docx,pdf,sse]",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "flake8>=7.0.0",
+    # Pinned to a minor range: the baseline freezes an exact per-error tally
+    # produced by one checker version, and the job is blocking now. An upstream
+    # release that adds a check or splits an error code would turn CI red on a
+    # PR that touched nothing related. Bump deliberately and regenerate with
+    # `python tools/check_mypy_baseline.py --update`.
+    "mypy>=2.3,<2.4",
+    "types-requests>=2.31.0",
+    # tests/test_ci_gates.py parses .github/workflows/tests.yml to assert that
+    # no check is decorative. It reads the workflow with a real YAML parser
+    # rather than string matching precisely because it is a guard: a hand-rolled
+    # scan that stopped matching would report "every job blocks" on a workflow
+    # full of `continue-on-error`. Not importable via pytest.importorskip for
+    # the same reason -- a skip is a green tick that checked nothing.
+    "pyyaml>=6.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+# Everything the CI job needs lives here, not in its command line. The job used
+# to pass --ignore-missing-imports --no-strict-optional --allow-untyped-defs,
+# which silently overrode this section and made local runs disagree with CI.
+plugins = ["pydantic.mypy"]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+# Matches what the CI command line already passed, so this is not a change for
+# CI. It IS a relaxation for everyone else: before this section existed, a bare
+# `mypy src`, an IDE, or a pre-commit hook used mypy's default (strict) and saw
+# None-safety errors that nobody sees now. Measured cost: 33 errors here, 93
+# with strict_optional = true. Those 60 are switched off by config rather than
+# frozen in a reviewable baseline, which is the wrong shape for debt on a
+# server whose models are full of `X | None`. Left off to keep this PR's
+# scope, but it is debt, not a decision.
+strict_optional = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[tool.pydantic-mypy]
+# The plugin's defaults are worse than no plugin for this codebase. With
+# init_forbid_extra = false it replaces the synthesized typed __init__ with one
+# taking **kwargs: Any, and none of the 18 BaseModel classes in src/models.py
+# sets model_config, so pydantic's default extra='ignore' silently drops an
+# unknown field. A misspelled field in a diagnostic result would then be caught
+# by neither mypy nor pydantic nor the suite -- it falls back to its default and
+# a wrong number reaches the client. mypy caught that before the plugin was
+# added. This line restores it at zero cost: the baseline is 33 either way.
+init_forbid_extra = true
+# init_typed = true would also restore wrong-type detection, at 33 -> 49
+# baseline entries. 16 of those 49 are `**dict[str, object]` splats whose real
+# cause is `common = dict(...)` in prognostics_tools.py widening the value type
+# -- worth fixing at the source rather than freezing. Left for a follow-up.
+
+# Third-party modules allowed to be missing or unstubbed. This is an allowlist
+# on purpose: a blanket --ignore-missing-imports means that if `mcp` ever fails
+# to resolve, Context degrades to Any and every ctx call site type-checks
+# vacuously -- which is exactly how the stripped-await regression stayed
+# invisible. Verified: with `mcp` off this list, breaking its import produces
+# `import-not-found` instead of "Success: no issues found".
+#
+# DO NOT add `mcp` (or anything else the server's own types depend on) here.
+#
+# Two groups, both legitimately unresolvable:
+#   - no type stubs and unlikely to ever ship them: scipy, pandas, sklearn,
+#     plotly, weasyprint, docx
+#   - every module behind an optional extra, since the CI job installs only
+#     `pip install -e .[dev]`: PIL + pytesseract + pdf2image (ocr), faiss +
+#     sentence_transformers (vector-search), docx (docx), weasyprint (pdf)
+#
+# Keep the second group in sync with [project.optional-dependencies]. A module
+# that is installed in a developer venv but absent in CI type-checks fine
+# locally and fails the job -- which is how PIL was missed on the first run.
+#
+# `predictive_maintenance_mcp.*` is the src/__main__.py self-import, which
+# resolves via the installed package rather than the `src` path mypy is given.
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "pandas",
+    "sklearn.*",
+    "plotly.*",
+    "docx.*",
+    "weasyprint",
+    "faiss",
+    "sentence_transformers",
+    "pytesseract",
+    "pdf2image",
+    "PIL.*",
+    "predictive_maintenance_mcp.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The repo-root `benchmarks` package (CWRU benchmark) is deliberately not an
+# installed package; put the rootdir on sys.path so the bare `pytest` that CI
+# invokes can import it from tests.
+pythonpath = ["."]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --strict-markers --tb=short --cov=src --cov-report=term-missing --cov-report=html"
+filterwarnings = [
+    # The suite mocks ctx everywhere, so an unawaited Context call is
+    # invisible: AsyncMock records the call either way. This turns the
+    # interpreter's own "never awaited" warning into a failure. Matched by
+    # message, not category — scipy/numpy raise unrelated RuntimeWarnings.
+    "error:coroutine.*was never awaited:RuntimeWarning",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "ml: marks tests that require ML models",
+    "real_data: marks tests that use real bearing data samples",
+    "asyncio: marks tests as async (requires pytest-asyncio)",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "src/html_templates.py",   # Active (report HTML backend) — coverage follow-up
+    "src/report_generator.py", # Active (report generation backend) — coverage follow-up
+]
+
+[tool.coverage.report]
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

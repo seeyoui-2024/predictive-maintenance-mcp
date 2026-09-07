@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "predictive-maintenance": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "predictive_maintenance_mcp"
+      ],
+      "env": {}
+    }
+  }
+}

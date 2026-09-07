@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/*
+!.vscode/mcp.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.cover
+.hypothesis/
+tests/data/
+
+# ML Models (generated during testing)
+models/*.pkl
+models/*.json
+!models/.gitkeep
+
+# HTML Reports (generated output files)
+reports/*.html
+!reports/.gitkeep
+
+# Benchmark datasets (download-on-demand from the official source, never
+# redistributed): raw .mat cache and converted opaque signals (CWRU)
+data/cache/
+data/signals/cwru/
+
+# Temporary files
+*.tmp
+*.log
+*.csv.bak
+
+# OS
+Thumbs.db
+.DS_Store
+
+# MCP Registry CLI
+mcp-publisher.exe
+mcp-publisher
+.mcpregistry_*
+
+rag_result.txt
+
+# Project-internal docs (local only)
+CLAUDE.md
+PRD_INDUSTRIAL_TRANSFORMATION.md
+docs/brainstorms/
+docs/plans/
+docs/residual-review-findings/
+docs/solutions/
+docs/AUDIT-*.md
+docs/issue-drafts/
+docs/distribution-kit/
+
+# Claude Code per-agent worktrees
+.claude/worktrees/
+resources/cache/*.pkl
+
+# Per-developer Claude Code settings. Was tracked by accident; it carries
+# bypassPermissions and absolute paths containing the developer OS account.
+.claude/settings.local.json

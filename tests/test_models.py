@@ -1,0 +1,470 @@
+"""
+Tests for Pydantic models (data contracts for MCP tool outputs).
+
+Covers:
+- Model instantiation with valid data
+- JSON serialization round-trip (model_dump_json → model_validate_json)
+- Optional fields (None values)
+- Field types and constraints
+"""
+
+import pytest
+from pydantic import ValidationError
+
+from predictive_maintenance_mcp.models import (
+    SpectralPeak,
+    FFTResult,
+    EnvelopeResult,
+    StatisticalResult,
+    StoredSignalInfo,
+    BearingFaultCheckResult,
+    ISOSeverityRefusal,
+    VibrationSeverityResult,
+    FeatureExtractionResult,
+    AnomalyModelResult,
+    AnomalyPredictionResult,
+)
+
+# ── SpectralPeak ───────────────────────────────────────────────────────────
+
+
+class TestSpectralPeak:
+
+    def test_creation(self):
+        p = SpectralPeak(
+            frequency_hz=120.5, magnitude=0.015, magnitude_db=5.2, note="1x"
+        )
+        assert p.frequency_hz == 120.5
+        assert p.note == "1x"
+
+    def test_default_note_empty(self):
+        p = SpectralPeak(frequency_hz=50, magnitude=0.1, magnitude_db=0.0)
+        assert p.note == ""
+
+    def test_json_roundtrip(self):
+        p = SpectralPeak(frequency_hz=100, magnitude=0.05, magnitude_db=-3.0, note="2x")
+        restored = SpectralPeak.model_validate_json(p.model_dump_json())
+        assert restored.frequency_hz == p.frequency_hz
+        assert restored.note == p.note
+
+
+# ── FFTResult ──────────────────────────────────────────────────────────────
+
+
+class TestFFTResult:
+
+    @pytest.fixture
+    def sample_fft_result(self):
+        return FFTResult(
+            top_peaks=[
+                SpectralPeak(frequency_hz=50, magnitude=0.1, magnitude_db=0),
+                SpectralPeak(frequency_hz=100, magnitude=0.05, magnitude_db=-6),
+            ],
+            peak_frequency=50.0,
+            peak_magnitude=0.1,
+            rms_spectral=0.02,
+            total_bins=5000,
+            freq_range_hz=[0.0, 5000.0],
+            sampling_rate=10000.0,
+            num_samples=10000,
+            frequency_resolution=2.0,
+        )
+
+    def test_creation(self, sample_fft_result):
+        assert sample_fft_result.peak_frequency == 50.0
+        assert len(sample_fft_result.top_peaks) == 2
+
+    def test_json_roundtrip(self, sample_fft_result):
+        restored = FFTResult.model_validate_json(sample_fft_result.model_dump_json())
+        assert restored.peak_frequency == 50.0
+        assert len(restored.top_peaks) == 2
+        assert restored.top_peaks[0].frequency_hz == 50.0
+
+    def test_missing_required_field_raises(self):
+        with pytest.raises(ValidationError):
+            FFTResult(
+                top_peaks=[],
+                peak_frequency=50.0,
+                # missing peak_magnitude, rms_spectral, etc.
+            )
+
+
+# ── EnvelopeResult ─────────────────────────────────────────────────────────
+
+
+class TestEnvelopeResult:
+
+    def test_creation(self):
+        r = EnvelopeResult(
+            signal_id="sig1",
+            num_samples=10000,
+            sampling_rate=10000.0,
+            filter_band=(500.0, 5000.0),
+            top_peaks=[
+                SpectralPeak(frequency_hz=107.36, magnitude=0.05, magnitude_db=0.0),
+                SpectralPeak(frequency_hz=214.72, magnitude=0.03, magnitude_db=-4.4),
+            ],
+            diagnosis="Peaks listed; compare against computed bearing frequencies.",
+        )
+        assert r.num_samples == 10000
+        assert len(r.top_peaks) == 2
+        assert r.filter_band == (500.0, 5000.0)
+
+    def test_preview_fields_removed(self):
+        """U9: the spectrum preview arrays are gone (compact output only)."""
+        assert "spectrum_preview_freq" not in EnvelopeResult.model_fields
+        assert "spectrum_preview_mag" not in EnvelopeResult.model_fields
+
+
+# ── StatisticalResult ──────────────────────────────────────────────────────
+
+
+class TestStatisticalResult:
+
+    def test_creation_with_declared_unit(self):
+        r = StatisticalResult(
+            rms=5.234,
+            peak_to_peak=18.5,
+            peak=9.25,
+            crest_factor=1.77,
+            kurtosis=3.0,
+            skewness=0.01,
+            mean=0.001,
+            std_dev=5.234,
+            signal_unit="g",
+            unit_note="Signal unit declared as 'g' in metadata.",
+        )
+        assert r.rms == 5.234
+        assert r.signal_unit == "g"
+
+    def test_undeclared_unit_is_none(self):
+        """The unit is None when not declared — never guessed from amplitude."""
+        r = StatisticalResult(
+            rms=5.234,
+            peak_to_peak=18.5,
+            peak=9.25,
+            crest_factor=1.77,
+            kurtosis=3.0,
+            skewness=0.01,
+            mean=0.001,
+            std_dev=5.234,
+            unit_note="Signal unit NOT declared.",
+        )
+        assert r.signal_unit is None
+        assert "detected_unit" not in StatisticalResult.model_fields
+
+
+# ── StoredSignalInfo ───────────────────────────────────────────────────────
+# (Replaces the removed orphaned SignalInfo model — StoredSignalInfo is the
+#  live signal-metadata contract.)
+
+
+class TestStoredSignalInfo:
+
+    def _make(self, **kwargs):
+        base = dict(
+            signal_id="sig1",
+            filepath="/data/test.csv",
+            load_timestamp="2026-07-13T00:00:00",
+            shape=[10000],
+            num_samples=10000,
+            size_bytes=80000,
+        )
+        base.update(kwargs)
+        return StoredSignalInfo(**base)
+
+    def test_positive_sampling_rate_accepted(self):
+        assert self._make(sampling_rate=10000.0).sampling_rate == 10000.0
+
+    def test_none_sampling_rate_accepted(self):
+        """Undeclared rate stays valid (None) — the gt=0 guard only bites values."""
+        assert self._make(sampling_rate=None).sampling_rate is None
+
+    def test_zero_sampling_rate_rejected(self):
+        """Schema backstop: a non-positive sampling rate is invalid (gt=0)."""
+        with pytest.raises(ValidationError):
+            self._make(sampling_rate=0.0)
+
+    def test_negative_sampling_rate_rejected(self):
+        with pytest.raises(ValidationError):
+            self._make(sampling_rate=-1.0)
+
+
+# ── Canonical fault vocabulary (drift guard) ───────────────────────────────
+
+
+class TestFaultVocabularySync:
+
+    def test_canonical_literal_matches_source_of_truth(self):
+        """BearingFaultCheckResult.fault_type_canonical hand-duplicates the
+        FAULT_TYPE_CANONICAL source-of-truth dict in bearing_analyzer. Assert
+        they stay in sync (mirrors the decision_support FaultType guard) so a
+        future 5th fault type reddens THIS targeted test instead of surfacing
+        as a confusing pydantic ValidationError at runtime."""
+        from typing import get_args
+
+        from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
+            FAULT_TYPE_CANONICAL,
+        )
+
+        # Field annotation is Optional[Literal[...]] == Union[Literal[...], None];
+        # collect the inner Literal string args (NoneType contributes nothing).
+        annotation = BearingFaultCheckResult.model_fields[
+            "fault_type_canonical"
+        ].annotation
+        literal_values: set = set()
+        for member in get_args(annotation):
+            literal_values.update(get_args(member))
+
+        assert literal_values == set(FAULT_TYPE_CANONICAL.values())
+
+
+# ── VibrationSeverityResult (unified severity model) ─────────────────────
+
+
+class TestVibrationSeverityResult:
+
+    def _make(self, zone="B", **kwargs):
+        base = dict(
+            signal_id="s",
+            rms_velocity_mm_s=2.0,
+            machine_group=2,
+            support_type="rigid",
+            zone=zone,
+            zone_description="desc",
+            severity_level="Acceptable",
+            color_code="yellow",
+            boundaries={"AB": 1.4, "BC": 2.8, "CD": 4.5},
+            frequency_range="10-1000 Hz",
+            unit_conversion_performed=False,
+            threshold_provenance="ISO 10816-3:2009",
+        )
+        base.update(kwargs)
+        return VibrationSeverityResult(**base)
+
+    def test_alert_level_derived_from_zone(self):
+        """Alert fields (absorbed check_vibration_alert) auto-derive."""
+        expected = {"A": "none", "B": "warning", "C": "alarm", "D": "danger"}
+        for zone, level in expected.items():
+            assert self._make(zone=zone).alert_level == level
+
+    def test_exceeded_threshold_derived(self):
+        assert self._make(zone="A").exceeded_threshold is None
+        assert self._make(zone="B").exceeded_threshold == 1.4
+        assert self._make(zone="C").exceeded_threshold == 2.8
+        assert self._make(zone="D").exceeded_threshold == 4.5
+
+    def test_signal_id_optional_for_direct_rms_route(self):
+        r = self._make(signal_id=None)
+        assert r.signal_id is None
+        assert r.status == "assessed"
+
+    def test_old_iso20816result_model_removed(self):
+        """U9 clean cut: the duplicate ISO result model is gone."""
+        import predictive_maintenance_mcp.models as models
+
+        assert not hasattr(models, "ISO20816Result")
+        assert not hasattr(models, "AlertResult")
+        assert not hasattr(models, "EnvelopeSpectrumResult")
+        assert not hasattr(models, "DegradationOnsetResult")
+
+
+# ── ISOSeverityRefusal ────────────────────────────────────────────────────
+
+
+class TestISOSeverityRefusal:
+
+    def test_creation(self):
+        r = ISOSeverityRefusal(
+            signal_id="sig1",
+            reason="Signal unit not declared.",
+            remedy="Re-load with load_signal(signal_unit=...).",
+        )
+        assert r.status == "refused"
+        assert "load_signal" in r.remedy
+
+    def test_status_is_schema_level(self):
+        """The refusal discriminator is part of the schema, not prose."""
+        assert "status" in ISOSeverityRefusal.model_fields
+        assert "reason" in ISOSeverityRefusal.model_fields
+        assert "remedy" in ISOSeverityRefusal.model_fields
+
+    def test_json_roundtrip(self):
+        r = ISOSeverityRefusal(
+            signal_id="s",
+            reason="why",
+            remedy="how",
+        )
+        restored = ISOSeverityRefusal.model_validate_json(r.model_dump_json())
+        assert restored.status == "refused"
+        assert restored.reason == "why"
+
+    def test_assessed_result_discriminates(self):
+        """VibrationSeverityResult carries status='assessed'."""
+        r = VibrationSeverityResult(
+            signal_id="s",
+            rms_velocity_mm_s=2.0,
+            machine_group=2,
+            support_type="rigid",
+            axis="vertical",
+            zone="B",
+            zone_description="Acceptable",
+            severity_level="Acceptable",
+            color_code="yellow",
+            boundaries={"AB": 1.4, "BC": 2.8, "CD": 4.5},
+            frequency_range="10-1000 Hz",
+            unit_conversion_performed=False,
+            threshold_provenance="ISO 10816-3:2009",
+        )
+        assert r.status == "assessed"
+
+
+# ── FeatureExtractionResult ────────────────────────────────────────────────
+
+
+class TestFeatureExtractionResult:
+
+    def test_creation(self):
+        r = FeatureExtractionResult(
+            num_segments=50,
+            segment_length_samples=1024,
+            segment_duration_s=0.1024,
+            overlap_ratio=0.5,
+            features_shape=[50, 8],
+            feature_names=[
+                "rms",
+                "peak",
+                "crest_factor",
+                "kurtosis",
+                "skewness",
+                "std",
+                "p2p",
+                "shape_factor",
+            ],
+            features_preview=[{"rms": 5.0, "peak": 10.0}],
+        )
+        assert r.num_segments == 50
+        assert len(r.feature_names) == 8
+
+
+# ── AnomalyModelResult ────────────────────────────────────────────────────
+
+
+class TestAnomalyModelResult:
+
+    def test_creation(self):
+        r = AnomalyModelResult(
+            model_name="bearing_health",
+            model_type="OneClassSVM",
+            num_training_samples=200,
+            num_features_original=8,
+            num_features_pca=5,
+            variance_explained=0.95,
+            model_params={"kernel": "rbf", "nu": 0.05},
+            model_path="/models/model.pkl",
+            scaler_path="/models/scaler.pkl",
+            pca_path="/models/pca.pkl",
+        )
+        assert r.model_type == "OneClassSVM"
+        # U9 loop closure: the saved name is echoed for predict_anomalies.
+        assert r.model_name == "bearing_health"
+
+    def test_optional_validation_fields(self):
+        r = AnomalyModelResult(
+            model_name="lof",
+            model_type="LocalOutlierFactor",
+            num_training_samples=100,
+            num_features_original=8,
+            num_features_pca=4,
+            variance_explained=0.90,
+            model_params={"n_neighbors": 20},
+            model_path="m.pkl",
+            scaler_path="s.pkl",
+            pca_path="p.pkl",
+        )
+        assert r.validation_accuracy is None
+        assert r.validation_details is None
+        assert r.validation_metrics is None
+
+
+# ── AnomalyPredictionResult ───────────────────────────────────────────────
+
+
+class TestAnomalyPredictionResult:
+
+    def test_healthy(self):
+        r = AnomalyPredictionResult(
+            model_name="m",
+            num_segments=100,
+            anomaly_count=2,
+            anomaly_ratio=0.02,
+            segment_duration_s=0.1,
+            overall_health="Healthy",
+        )
+        assert r.overall_health == "Healthy"
+        assert r.anomaly_ratio == 0.02
+
+    def test_faulty(self):
+        r = AnomalyPredictionResult(
+            model_name="m",
+            num_segments=100,
+            anomaly_count=90,
+            anomaly_ratio=0.90,
+            segment_duration_s=0.1,
+            overall_health="Faulty",
+        )
+        assert r.overall_health == "Faulty"
+
+    def test_confidence_field_removed(self):
+        """The invented High/Medium 'confidence' label no longer exists."""
+        r = AnomalyPredictionResult(
+            model_name="m",
+            num_segments=10,
+            anomaly_count=0,
+            anomaly_ratio=0.0,
+            segment_duration_s=0.1,
+            overall_health="Healthy",
+        )
+        assert "confidence" not in AnomalyPredictionResult.model_fields
+        assert not hasattr(r, "confidence")
+
+    def test_per_segment_arrays_removed(self):
+        """U9 bounded output: per-segment arrays are gone from the schema."""
+        assert "predictions" not in AnomalyPredictionResult.model_fields
+        assert "anomaly_scores" not in AnomalyPredictionResult.model_fields
+        for bounded in ("score_percentiles", "worst_segments"):
+            assert bounded in AnomalyPredictionResult.model_fields
+
+    def test_optional_scores(self):
+        r = AnomalyPredictionResult(
+            model_name="m",
+            num_segments=10,
+            anomaly_count=0,
+            anomaly_ratio=0.0,
+            segment_duration_s=0.1,
+            overall_health="Healthy",
+        )
+        assert r.score_percentiles is None
+        assert r.worst_segments == []
+
+    def test_json_roundtrip(self):
+        r = AnomalyPredictionResult(
+            model_name="m",
+            num_segments=50,
+            anomaly_count=5,
+            anomaly_ratio=0.1,
+            segment_duration_s=0.1,
+            overall_health="Suspicious",
+            score_percentiles={
+                "p5": -0.5,
+                "p25": -0.1,
+                "p50": 0.1,
+                "p75": 0.3,
+                "p95": 0.6,
+            },
+            worst_segments=[{"segment_index": 3, "start_time_s": 0.15, "score": -0.5}],
+        )
+        restored = AnomalyPredictionResult.model_validate_json(r.model_dump_json())
+        assert restored.anomaly_count == 5
+        assert restored.score_percentiles["p50"] == 0.1
+        assert restored.worst_segments[0]["segment_index"] == 3

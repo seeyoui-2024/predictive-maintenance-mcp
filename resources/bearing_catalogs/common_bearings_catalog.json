@@ -1,0 +1,60 @@
+{
+  "catalog_info": {
+    "name": "Verified Bearing Geometry Catalog",
+    "version": "2.0",
+    "date": "2026-07-11",
+    "policy": "Every entry MUST carry a 'source' field tracing its geometry to a public, verifiable reference (dataset documentation, manufacturer datasheet, or peer-reviewed paper). Entries that cannot be verified are removed, not approximated. Earlier versions of this file contained ~20 entries with fabricated internal geometry attributed to 'ISO 15:2017' (which standardizes boundary dimensions only, not internal geometry); those entries were deleted in v2.0.",
+    "kinematics_reference": "Standard rolling-element kinematic formulas (BPFO, BPFI, BSF, FTF); see Randall, R.B. & Antoni, J. (2011), 'Rolling element bearing diagnostics - A tutorial', Mechanical Systems and Signal Processing 25(2), 485-520, doi:10.1016/j.ymssp.2010.07.017"
+  },
+  "bearings": {
+    "6205": {
+      "designation": "6205",
+      "type": "Deep Groove Ball Bearing",
+      "series": "62xx",
+      "num_balls": 9,
+      "ball_diameter_mm": 7.94,
+      "pitch_diameter_mm": 39.04,
+      "contact_angle_deg": 0.0,
+      "bore_mm": 25,
+      "outer_diameter_mm": 52,
+      "width_mm": 15,
+      "reference_frequency_factors": {
+        "BPFO": 3.5848,
+        "BPFI": 5.4152,
+        "FTF": 0.39828
+      },
+      "source": "CWRU Bearing Data Center, drive-end bearing SKF 6205-2RS JEM (https://engineering.case.edu/bearingdatacenter/bearing-information): ID 0.9843 in, OD 2.0472 in, thickness 0.5906 in, ball diameter 0.3126 in, pitch diameter 1.537 in; published defect frequency factors BPFO=3.5848x, BPFI=5.4152x, FTF=0.39828x shaft speed"
+    },
+    "6203": {
+      "designation": "6203",
+      "type": "Deep Groove Ball Bearing",
+      "series": "62xx",
+      "num_balls": 8,
+      "ball_diameter_mm": 6.746,
+      "pitch_diameter_mm": 28.499,
+      "contact_angle_deg": 0.0,
+      "bore_mm": 17,
+      "outer_diameter_mm": 40,
+      "width_mm": 12,
+      "reference_frequency_factors": {
+        "BPFO": 3.053,
+        "BPFI": 4.9469,
+        "FTF": 0.3817
+      },
+      "source": "CWRU Bearing Data Center, fan-end bearing SKF 6203-2RS JEM (https://engineering.case.edu/bearingdatacenter/bearing-information): ID 0.6693 in, OD 1.5748 in, thickness 0.4724 in, ball diameter 0.2656 in, pitch diameter 1.122 in; published defect frequency factors BPFO=3.0530x, BPFI=4.9469x, FTF=0.3817x shaft speed"
+    },
+    "UER204": {
+      "designation": "UER204",
+      "type": "Deep Groove Ball Bearing (insert bearing with extended inner ring)",
+      "series": "UER2xx",
+      "num_balls": 8,
+      "ball_diameter_mm": 7.92,
+      "pitch_diameter_mm": 34.55,
+      "contact_angle_deg": 0.0,
+      "bore_mm": 20,
+      "outer_diameter_mm": 47,
+      "width_mm": 31,
+      "source": "XJTU-SY bearing run-to-failure dataset, LDK UER204: internal geometry (8 balls, ball diameter 7.92 mm, mean/pitch diameter 34.55 mm, contact angle 0 deg, raceway diameters 29.30/39.80 mm) from Wang, Lei, Li & Li (2020), 'A Hybrid Prognostics Approach for Estimating Remaining Useful Life of Rolling Element Bearings', IEEE Transactions on Reliability 69(1), 401-412, doi:10.1109/TR.2018.2882682; boundary dimensions 20 mm bore x 47 mm OD x 31 mm length-through-bore from LDK UER204 insert-bearing datasheet (https://www.ldk-bearings.com)"
+    }
+  }
+}

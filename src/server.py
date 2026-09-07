@@ -1,0 +1,432 @@
+"""
+Predictive Maintenance MCP Server — Orchestrator.
+
+Thin entry point that creates the MCPServer instance and delegates tool
+registration to the mcp_tools sub-package (one module per ISO 13374 block).
+"""
+
+import argparse
+import logging
+import os
+import sys
+
+from mcp.server.mcpserver import MCPServer
+
+from .config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
+from .mcp_tools import register_all
+
+logger = logging.getLogger(__name__)
+
+
+def _env(name: str, fallback: str) -> str:
+    """Read an env var, treating set-but-empty as unset.
+
+    ``os.environ.get(name, fallback)`` returns ``""`` when the variable exists
+    with an empty value, which is easy to produce from a compose file or a
+    .env. For MCP_HOST that empty string reaches the socket layer as
+    INADDR_ANY — an operator blanking the variable to *undo* a wildcard bind
+    would get the opposite of what they asked for.
+    """
+    return (os.environ.get(name) or "").strip() or fallback
+
+
+# ---------------------------------------------------------------------------
+# Logging
+#
+# Since 0.12.0 the stdlib logger is the ONLY progress channel — SEP-2577
+# removed the client-facing one — so where these records go is not a
+# convenience, it is the whole contract.
+# ---------------------------------------------------------------------------
+
+#: Package-root logger. Derived rather than spelled, so renaming the package
+#: cannot silently detach every module logger from its handler.
+PACKAGE_LOGGER = __package__ or "predictive_maintenance_mcp"
+
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+DEFAULT_LOG_LEVEL = "INFO"
+
+#: Upper bound on a rendered record. Not a formatting preference: see
+#: _OneBoundedLine.
+_MAX_RECORD_CHARS = 2000
+
+
+class _OneBoundedLine(logging.Filter):
+    """Keep each record on one physical line, bounded in length.
+
+    Both halves exist because of the 0.12.0 destination change, not for
+    tidiness. These records used to be MCP notifications: framed by the
+    protocol, and readable only by the caller that triggered them. They are
+    now lines in the operator's log.
+
+    * A newline inside a caller-supplied ``signal_id`` / ``file_name`` /
+      ``bearing_id`` was a cosmetic wart when the client re-rendered it. In
+      a line-oriented log it is a forged entry — an attacker-influenced
+      value can emit what looks like an independent ERROR record, or push a
+      real one out of view.
+    * An unbounded value was a large JSON payload the client had to drain.
+      It is now an unbounded synchronous write to a pipe the client is
+      *not* obliged to drain; once the buffer fills, ``write()`` blocks
+      inside a coroutine that has no await points, wedging the event loop
+      with no error and no traceback.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        text = record.getMessage()
+        if len(text) > _MAX_RECORD_CHARS:
+            text = (
+                f"{text[:_MAX_RECORD_CHARS]}… " f"[truncated, {len(text)} chars total]"
+            )
+        # Interpolate once, here, so args cannot reintroduce a newline.
+        record.msg = text.replace("\r", "\\r").replace("\n", "\\n")
+        record.args = ()
+        return True
+
+
+def configure_logging(level: str | None = None, force: bool = False) -> None:
+    """Bind this package's narration to stderr, on every entry path.
+
+    The obvious ``logging.basicConfig`` is the wrong tool here, for three
+    reasons that only became load-bearing in 0.12.0:
+
+    * ``MCPServer(...)`` installs a handler on the ROOT logger while this
+      module is still being imported. ``basicConfig`` is documented to do
+      nothing when root already has handlers, so a ``basicConfig`` call
+      placed below the server construction never takes effect — the format
+      it names is silently discarded and records render bare, with no
+      logger name to say which of the six tool modules emitted them.
+    * Root's configuration belongs to whoever reached it first, and this
+      package can never win that race. A host that calls
+      ``basicConfig(stream=sys.stdout)`` before importing us puts every
+      tool's narration on fd 1, which under the stdio transport is the
+      JSON-RPC channel — non-JSON lines between frames end the session.
+    * ``main()`` is not the only entry point. ``__init__`` exports ``mcp``
+      as a runnable object, so an embedder calling ``mcp.run()`` reaches
+      every tool without ``main()`` ever running. Left to root's default
+      WARNING level, all INFO narration would be dropped entirely — not
+      relocated to stderr, simply gone.
+
+    Configuring *our* logger with ``propagate = False`` answers all three at
+    once: the destination stops depending on root, on import order, and on
+    which entry point ran.
+
+    Args:
+        level: Level name. Defaults to ``MCP_LOG_LEVEL``, then ``INFO``.
+        force: Replace an existing handler instead of leaving it alone.
+    """
+    pkg = logging.getLogger(PACKAGE_LOGGER)
+
+    requested = (level or _env("MCP_LOG_LEVEL", DEFAULT_LOG_LEVEL)).upper()
+    resolved = logging.getLevelName(requested)
+    fell_back = not isinstance(resolved, int)
+    pkg.setLevel(logging.getLevelName(DEFAULT_LOG_LEVEL) if fell_back else resolved)
+
+    if force:
+        for handler in list(pkg.handlers):
+            pkg.removeHandler(handler)
+    elif pkg.handlers:
+        return
+
+    # A redirected stderr on Windows decodes as the ANSI code page, not
+    # UTF-8 — and a piped stderr is the normal shape for a stdio MCP
+    # subprocess. Left alone, a non-ASCII signal_id raises inside emit(),
+    # which drops the line and prints "--- Logging error ---" in its place.
+    #
+    # utf-8 rather than just an errors= policy: an operator greps this log
+    # for the signal_id they were given, and "se\xf1al_1" does not match
+    # "señal_1". backslashreplace stays as the backstop for a stream that
+    # cannot carry it.
+    reconfigure = getattr(sys.stderr, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (ValueError, OSError):  # detached or non-reconfigurable stream
+            pass
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    handler.addFilter(_OneBoundedLine())
+    pkg.addHandler(handler)
+    # stderr, never stdout: stdout is the stdio transport's protocol channel.
+    pkg.propagate = False
+
+    # WeasyPrint narrates every CSS fetch at INFO on its own logger, which
+    # propagates to root — three lines per PDF, on a channel we do not
+    # control. Harmless where root goes to stderr, protocol corruption where
+    # a host has pointed root at stdout. We invoke WeasyPrint, so quieting
+    # its progress chatter is ours to decide; its warnings still come through.
+    logging.getLogger("weasyprint").setLevel(logging.WARNING)
+
+    if fell_back:
+        # Emitted after the handler exists, so the operator actually sees it.
+        logger.warning(
+            "Invalid MCP_LOG_LEVEL=%r — using %s. Choose one of "
+            "DEBUG, INFO, WARNING, ERROR, CRITICAL.",
+            requested,
+            DEFAULT_LOG_LEVEL,
+        )
+
+
+# Run at import, not from main(): the exported `mcp` object is a supported
+# entry point and never reaches main().
+configure_logging()
+
+# ---------------------------------------------------------------------------
+# MCP server initialization
+# ---------------------------------------------------------------------------
+mcp = MCPServer(
+    "Predictive Maintenance",
+    instructions="""
+    MCP server for predictive maintenance and industrial machinery diagnostics.
+
+    Capabilities:
+    - Reading and managing vibration signals
+    - Spectral analysis (FFT with dB normalization)
+    - Envelope analysis for bearing fault detection
+    - Statistical analysis (RMS, Kurtosis, Crest Factor)
+    - ISO 20816-3 vibration severity evaluation
+    - Professional HTML report generation (saved to reports/ directory)
+    - Automatic peak detection and harmonic identification
+    - Guided diagnostic workflows (prompts)
+    - Document search (RAG) across machine manuals and bearing catalogs
+
+    Output efficiency:
+    - All spectral tools return COMPACT summaries (top peaks + stats), NOT full arrays
+    - predict_anomalies returns counts/percentiles/worst segments, NOT per-segment arrays
+    - Reports are saved as HTML files; only path + summary returned to chat
+    - Use generate_*_report() or plot_signal() for full visual inspection
+    - NEVER attempt to display or return full-length arrays in chat
+
+    Report Generation System:
+    - All visualizations are generated as professional HTML files
+    - Reports are saved in reports/ directory with timestamped filenames
+      (consecutive runs never overwrite) and embedded metadata
+    - LLM should inform user about report location and NOT display HTML content
+    - Use list_html_reports() to see available reports, and
+      list_html_reports(file_name=...) to read one report's metadata
+      without consuming tokens
+
+    Documentation Search (RAG):
+    - Use search_documentation() to find relevant passages in manuals and catalogs
+    - Prefer search_documentation() over read_manual_excerpt() for targeted queries
+    - Use read_manual_excerpt() only when you need to read consecutive pages
+
+    Evidence-based inference policy (hard rules):
+    1) Do NOT infer fault type from filenames, paths, or user-provided labels. Treat filenames as opaque identifiers.
+    2) Do NOT make diagnostic claims based solely on statistical parameters (RMS/CF/Kurtosis). Use them for screening only.
+    3) Bearing fault identification (inner/outer/ball/cage) must be supported by frequency-domain evidence (envelope peaks at characteristic frequencies) and at least one additional indicator (e.g., high kurtosis or distinct harmonics). If this corroboration is missing, mark the result as "inconclusive" and recommend further analysis.
+    4) Use cautious language: say "possible" or "consistent with" when evidence is partial; say "confirmed" only if multiple independent analyses agree.
+    5) Always cite which analyses and thresholds support each conclusion. If data or parameters are missing, ask for them instead of guessing.
+    6) NEVER suggest parameters, thresholds, or recommendations not explicitly provided in tool outputs or prompt workflows. Do NOT invent frequency ranges, filter settings, or maintenance actions. Only use guidance from STEP 6 of diagnostic prompts.
+
+    Report authorship policy (who is allowed to assert):
+    - generate_diagnostic_report returns a 'statements' list containing every
+      evaluative sentence the server wrote. Reuse those sentences verbatim
+      when presenting the result. You may lay them out, reorder them for
+      reading, and add visual emphasis; you may not rewrite what they claim.
+    - Do NOT coin standard names, editions, machine classes, or severity
+      zones. The severity verdict carries its own standard citation and a
+      mandatory provenance caveat; reproduce both, and never paraphrase or
+      drop the caveat.
+    - This server publishes NO confidence score and NO probability of
+      correctness. 'evidence_strength' is a count of independent
+      corroborating findings, not a confidence — render it as such, and never
+      convert it into a percentage, a probability, or a "confidence: high"
+      style label.
+    - If a question is not answered by the returned statements, say the
+      analysis does not answer it. Do not fill the gap.
+
+    Signal unit policy (CRITICAL - declared units only, never guessed):
+    - ISO 20816-3 severity verdicts on stored signals require a DECLARED unit:
+      1. Explicit parameter: load_signal(signal_unit='g'|'m/s2'|'mm/s'|'m/s')
+      2. Companion metadata: 'signal_unit' field in <name>_metadata.json
+      (explicit parameter takes precedence over metadata; the direct
+      rms_velocity_mm_s route of assess_severity needs no declaration —
+      the value is by definition mm/s)
+    - Units are NEVER inferred from signal amplitude — there is no
+      amplitude-based guessing flow and no default assumption
+    - Without a declared unit: severity tools raise a structured error, and
+      diagnose_vibration returns an iso_severity block with status='refused'
+      plus reason and remedy (the other diagnosis blocks still run)
+    - If the unit is unknown, ask the user for it — do not guess
+    - Wrong unit declaration (g vs mm/s) completely invalidates ISO 20816-3 results!
+    - Raw binary files (.bin/.raw/.dat) load only with an explicitly declared
+      sample_format AND sampling_rate — via explicit load_signal parameters or
+      the companion metadata file — never inferred from file content or filename
+
+    Output formatting rules:
+    - Keep responses brief (<=300 words, bullet points)
+    - Inform user about generated HTML reports with file path
+    - DO NOT display HTML content in chat (wastes tokens)
+    - NEVER print large data directly
+    - Reports are professional, self-contained HTML files
+
+    Signal handle policy (signal_id is THE handle):
+    - list_signals(scope="disk") shows loadable files; load_signal() loads
+      one (or a batch) and returns the signal_id
+    - list_signals(scope="memory") shows the loaded signal_ids;
+      get_signal_info() exposes metadata including the companion
+      source_metadata (rpm, reference frequencies, ...)
+    - Every analysis/diagnosis/report/prognostics tool takes signal_id
+    - Do NOT auto-correct or guess file names or ids; if ambiguous, ask
+
+    Prognostics (ISO 13374 Block 5):
+    - Remaining Useful Life estimation (linear, exponential, kalman) —
+      requires a series of measurements taken over time (values or
+      signal_ids + timestamps); a single recording is refused
+    - Within-recording trend + degradation-onset screening
+      (analyze_signal_trend: p-value based direction, post-baseline onset)
+
+    Severity & Decision Support (ISO 13374 Blocks 4/6):
+    - assess_severity: unified ISO 20816-3 severity + alert classification
+      (zones A-D; boundary values from ISO 10816-3:2009). Accepts a stored
+      signal_id OR a direct rms_velocity_mm_s reading, plus optional
+      custom thresholds {'warning','alarm','danger'}
+    - Maintenance recommendation generation (severity + fault-specific)
+
+    Workflow Prompts (use these for guided analysis):
+    - diagnose_bearing() - Complete bearing diagnostic workflow with evidence-based decision tree
+    - diagnose_gear() - Gear fault detection workflow
+    - quick_diagnostic_report() - Fast screening analysis (non-definitive)
+    """,
+)
+
+# ---------------------------------------------------------------------------
+# Register all tools, resources, and prompts from ISO 13374 modules
+# ---------------------------------------------------------------------------
+register_all(mcp)
+
+
+# ---------------------------------------------------------------------------
+# Server lifecycle
+# ---------------------------------------------------------------------------
+def _setup_environment() -> None:
+    """Create required directories.
+
+    Logging is deliberately NOT configured here. It is configured at import
+    (see configure_logging) because ``main()`` is only one of the ways this
+    package is started, and because the ``logging.basicConfig`` call that
+    used to live here was inert — MCPServer had already claimed the root
+    logger by the time it ran.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
+    (RESOURCES_DIR / "machine_manuals").mkdir(parents=True, exist_ok=True)
+    (RESOURCES_DIR / "bearing_catalogs").mkdir(parents=True, exist_ok=True)
+    (RESOURCES_DIR / "datasheets").mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+#: Transports this server can be asked for. Kept next to the dispatch in
+#: main() so the CLI vocabulary and the run() branch cannot drift apart.
+TRANSPORTS = ("stdio", "sse", "streamable-http")
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser, validating environment-supplied defaults.
+
+    argparse checks ``choices`` only for values that appear on the command
+    line — never for a default. Since the env vars ARE the configuration
+    channel in every container deployment, an env-supplied transport would
+    otherwise reach run() unchecked and surface as a crash loop.
+
+    Exposed at module level so the tests exercise this parser rather than a
+    copy of it.
+    """
+    transport = _env("MCP_TRANSPORT", "stdio")
+    if transport not in TRANSPORTS:
+        raise SystemExit(
+            f"Invalid MCP_TRANSPORT={transport!r} — choose one of "
+            f"{list(TRANSPORTS)}."
+        )
+
+    port_raw = _env("MCP_PORT", str(DEFAULT_PORT))
+    try:
+        port = int(port_raw)
+    except ValueError:
+        raise SystemExit(
+            f"Invalid MCP_PORT={port_raw!r} — expected an integer."
+        ) from None
+
+    parser = argparse.ArgumentParser(
+        description="Predictive Maintenance MCP Server",
+    )
+    parser.add_argument(
+        "--transport",
+        "-t",
+        choices=list(TRANSPORTS),
+        default=transport,
+        help="Transport protocol (default: stdio, env: MCP_TRANSPORT)",
+    )
+    parser.add_argument(
+        "--host",
+        default=_env("MCP_HOST", DEFAULT_HOST),
+        help="Bind address for SSE/HTTP (default: 127.0.0.1, env: MCP_HOST)",
+    )
+    parser.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=port,
+        help="Port for SSE/HTTP transport (default: 8000, env: MCP_PORT)",
+    )
+    return parser
+
+
+def main():
+    """Run the MCP server.
+
+    CLI usage::
+
+        # Default: stdio transport (Claude Desktop, VS Code)
+        predictive-maintenance-mcp
+
+        # SSE transport for remote/enterprise clients
+        predictive-maintenance-mcp --transport sse --host 0.0.0.0 --port 8080
+
+        # Streamable-HTTP transport (MCP 2025-03-26 spec)
+        predictive-maintenance-mcp --transport streamable-http --port 8080
+
+    Environment variable overrides (useful in Docker)::
+
+        MCP_TRANSPORT=sse  MCP_HOST=0.0.0.0  MCP_PORT=8080
+    """
+    args = build_parser().parse_args()
+
+    _setup_environment()
+
+    logger.info("Starting Predictive Maintenance MCP Server...")
+    logger.info(f"Transport: {args.transport}")
+    logger.info(f"Data directory: {DATA_DIR}")
+    if args.transport == "stdio":
+        # stdio takes no bind address. Say so rather than discarding the
+        # flags in silence, which reads as "it bound where I asked".
+        if args.host != DEFAULT_HOST or args.port != DEFAULT_PORT:
+            logger.warning(
+                "--host/--port are ignored for stdio transport "
+                "(no socket is opened)."
+            )
+    else:
+        # "Binding to", not "Listening on": run() has not been called yet, so
+        # the bind may still fail. The old wording asserted success before
+        # the attempt, which put a false success line directly above the
+        # traceback of a port conflict.
+        logger.info(f"Binding to {args.host}:{args.port}")
+
+    # mcp 2.x dropped Settings.host/port: the bind address is a per-transport
+    # run() kwarg now. The stdio overload declares neither, so the branch
+    # follows the typed contract. (At runtime run() takes **kwargs and simply
+    # drops them for stdio -- silently, which is exactly why the declared
+    # contract is the thing to honour rather than the current behaviour.)
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport=args.transport, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()

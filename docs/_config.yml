@@ -1,0 +1,21 @@
+title: Predictive Maintenance AI Agent — Open-Source MCP Server & Claude Plugin for Condition Monitoring
+description: >-
+  Open-source AI agent for predictive maintenance and condition monitoring. 37 MCP endpoints,
+  8 Claude skills for vibration analysis, bearing fault detection, ISO 20816 severity assessment,
+  ML anomaly detection, and remaining useful life estimation — via natural language with Claude,
+  ChatGPT, or Ollama. Privacy-first: your data never leaves your machine.
+url: "https://lgdimaggio.github.io"
+baseurl: "/predictive-maintenance-mcp"
+lang: en
+
+# Custom index.html — no Jekyll theme needed
+plugins:
+  - jekyll-sitemap
+
+# Exclude dev/docs files from the built site
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - OLLAMA_GUIDE.md
+  - QUICKSTART_DEVELOPER.md
+  - QUICKSTART_ENGINEER.md

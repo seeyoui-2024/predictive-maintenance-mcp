@@ -1,0 +1,133 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+
+    - name: Run tests with pytest
+      run: |
+        pytest --cov=src --cov-report=xml --cov-report=term -v
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      continue-on-error: true
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  lint:
+    name: Lint with flake8
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8
+
+    - name: Lint - syntax errors and undefined names (blocking)
+      run: |
+        flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
+
+    - name: Lint - style warnings (non-blocking)
+      run: |
+        flake8 src --count --exit-zero --max-complexity=20 --max-line-length=120 --statistics
+
+  type-check:
+    name: Type check with mypy
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+
+    # Blocking, but only for NEW errors. Pre-existing ones are frozen in
+    # tools/mypy_baseline.txt; the script fails the job when an error appears
+    # beyond that baseline. mypy settings live in [tool.mypy] in pyproject.toml
+    # rather than on this command line, so a bare `mypy src` locally and this
+    # job check exactly the same things.
+    #
+    # This job is not decorative: the suite mocks `ctx` with AsyncMock
+    # everywhere, so regressions in how the server talks to the MCP client
+    # can pass every test while mypy is the only thing that notices.
+    - name: Type check with mypy (new errors are blocking)
+      run: |
+        python tools/check_mypy_baseline.py
+
+  format-check:
+    name: Check formatting with Black
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+
+    - name: Install Black
+      run: |
+        python -m pip install --upgrade pip
+        pip install black
+
+    # Blocking. It was `continue-on-error: true` from the start, so it sat
+    # green over a tree where 70 of 91 files would have been reformatted --
+    # the same decorative-check defect removed from the mypy job above.
+    #
+    # line-length comes from [tool.black] in pyproject.toml rather than this
+    # command line, so a bare `black src tests benchmarks` locally and this
+    # job agree. `benchmarks` is in scope so the CWRU benchmark package is
+    # format-gated like src and tests (asserted by
+    # tests/test_cwru_benchmark_guards.py).
+    - name: Check code formatting
+      run: |
+        black --check src tests benchmarks

@@ -151,6 +151,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "new": "New",
         "acceptable": "Acceptable",
         "severe": "Severe",
+        # Additional translations for integrated report
+        "no_baseline_available": "No baseline available for comparison.",
+        "schedule_bearing_inspection": "Schedule bearing inspection",
+        "visual_inspection": "Visual inspection of bearing condition.",
+        "iso_zone_c_indicates": "ISO zone C indicates attention needed.",
         
         # DOCX Report
         "diagnostic_report_docx": "Diagnostic Report",

@@ -65,10 +65,10 @@ TRANSLATIONS = {
         ...
     },
     "zh": {
-        "diagnostic_report": "诊断报告",
-        "evidence": "证据",
-        "rms_velocity": "均方根速度",
-        "zone_c": "C区",
+        "diagnostic_report": "Diagnostic Report (Chinese)",
+        "evidence": "Evidence (Chinese)",
+        "rms_velocity": "RMS velocity (Chinese)",
+        "zone_c": "Zone C (Chinese)",
         ...
     }
 }
@@ -86,10 +86,10 @@ _TRANSLATIONS = {
         ...
     },
     "zh-CN": {
-        "report.title.diagnostic": "轴承诊断报告",
-        "ui.rms_velocity": "均方根速度",
-        "iso.zone_c": "C区 — 警报。检测到显著缺陷。",
-        "diag.bearing.matched_statement": "轴承 {bearing_id} 在 {shaft_freq:.1f} Hz 轴速下：{matched_parts}。",
+        "report.title.diagnostic": "Bearing Diagnostic Report (Chinese)",
+        "ui.rms_velocity": "RMS Velocity (Chinese)",
+        "iso.zone_c": "Zone C — Alert. Significant defect detected. (Chinese)",
+        "diag.bearing.matched_statement": "Bearing {bearing_id} at {shaft_freq:.1f} Hz shaft speed: {matched_parts}. (Chinese)",
         ...
     }
 }
